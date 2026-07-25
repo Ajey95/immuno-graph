@@ -5,7 +5,7 @@ import { isoInstantSchema, sha256Schema, uuidSchema } from './common.js';
 export const artifactSchema = z
   .object({
     id: uuidSchema,
-    type: z.enum(['JSON', 'CSV', 'EVIDENCE_GRAPH', 'WORKFLOW_TRACE']),
+    type: z.enum(['JSON', 'CSV', 'EVIDENCE_GRAPH', 'WORKFLOW_TRACE', 'RESEARCH_PACKAGE']),
     filename: z.string(),
     mediaType: z.string(),
     sizeBytes: z.number().int().nonnegative(),

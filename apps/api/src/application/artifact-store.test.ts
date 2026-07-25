@@ -31,6 +31,22 @@ describe('ArtifactStore', () => {
     expect(download.filename).toBe('report.json');
   });
 
+  it('writes and streams a binary artifact with size and hash metadata', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'immunograph-artifacts-'));
+    roots.push(root);
+    const store = new ArtifactStore(root);
+    const bytes = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
+
+    const record = await store.writeBytes('run-1/research-package.zip', bytes, 'application/zip');
+    const download = await store.open(record);
+    const chunks = [];
+    for await (const chunk of download.stream) chunks.push(Buffer.from(chunk));
+
+    expect(download.filename).toBe('research-package.zip');
+    expect(download.mediaType).toBe('application/zip');
+    expect(Buffer.concat(chunks)).toEqual(bytes);
+  });
+
   it('rejects path escapes and integrity mismatches', async () => {
     const root = await mkdtemp(join(tmpdir(), 'immunograph-artifacts-'));
     roots.push(root);

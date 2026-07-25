@@ -4,6 +4,7 @@ import type { Repositories } from '@immunograph/database';
 import type { ArtifactStore } from './artifact-store.js';
 import { DependencyUnavailableError } from './errors.js';
 import type { ReportGenerationCommand, ReportGenerationPort } from './ports.js';
+import { createResearchPackageArtifact } from './research-package-artifact.js';
 import { createSupplementalReportArtifacts } from './report-artifacts.js';
 
 export class LocalReportGenerationPort implements ReportGenerationPort {
@@ -11,8 +12,15 @@ export class LocalReportGenerationPort implements ReportGenerationPort {
     private readonly repositories: Pick<
       Repositories,
       | 'runs'
+      | 'projects'
+      | 'proteins'
       | 'candidates'
       | 'rankingResults'
+      | 'predictorExecutions'
+      | 'observations'
+      | 'populationCoverageResults'
+      | 'shortlistOptimizationResults'
+      | 'approvals'
       | 'artifacts'
       | 'events'
       | 'graphEdges'
@@ -102,6 +110,12 @@ export class LocalReportGenerationPort implements ReportGenerationPort {
       templateVersion: command.options.templateVersion,
       includeEvidenceGraph: command.options.includeEvidenceGraph,
       includeWorkflowTrace: command.options.includeWorkflowTrace,
+    });
+    await createResearchPackageArtifact(this.repositories, this.artifactStore, {
+      runId: command.runId,
+      rankingSnapshotHash: snapshotHash,
+      requestSuffix,
+      templateVersion: command.options.templateVersion,
     });
     const first = created[0];
     if (first === undefined) throw new DependencyUnavailableError('report output format');

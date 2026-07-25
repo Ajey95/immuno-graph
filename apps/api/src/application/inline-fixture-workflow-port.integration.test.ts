@@ -175,6 +175,7 @@ describe('inline synthetic fixture workflow', () => {
     expect(artifacts.items.map(({ type }) => type).sort()).toEqual([
       'EVIDENCE_GRAPH',
       'JSON',
+      'RESEARCH_PACKAGE',
       'WORKFLOW_TRACE',
     ]);
   }, 60_000);

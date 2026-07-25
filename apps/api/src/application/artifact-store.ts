@@ -61,14 +61,21 @@ export class ArtifactStore {
     contents: string,
     mimeType: string,
   ): Promise<ArtifactFileRecord> {
+    return this.writeBytes(relativePath, Buffer.from(contents, 'utf8'), mimeType);
+  }
+
+  async writeBytes(
+    relativePath: string,
+    contents: Buffer,
+    mimeType: string,
+  ): Promise<ArtifactFileRecord> {
     const target = this.containedPath(relativePath);
     await mkdir(dirname(target), { recursive: true });
-    await writeFile(target, contents, { encoding: 'utf8', flag: 'wx' });
-    const bytes = Buffer.from(contents, 'utf8');
+    await writeFile(target, contents, { flag: 'wx' });
     return {
       relativePath,
-      byteSize: bytes.byteLength,
-      sha256: createHash('sha256').update(bytes).digest('hex'),
+      byteSize: contents.byteLength,
+      sha256: createHash('sha256').update(contents).digest('hex'),
       mimeType,
     };
   }
