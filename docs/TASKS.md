@@ -8,14 +8,14 @@ This checklist mirrors [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md). Check a
 - `npm run lint`: passed.
 - `npm run format:check`: passed.
 - `npm run build`: passed.
-- `npm run test`: passed, 67 test files and 276 tests.
+- `npm run test`: passed, 67 test files and 277 tests.
 - `npm run db:seed`: passed on the default local database.
 - `npm run db:migrate`: passed against a clean temporary SQLite database. The default `packages/database/prisma/immunograph.db` was locked during one verification attempt, which usually means a local API/dev process or SQLite handle was still open.
 - `npm run connectors:check:iedb`: passed against the live IEDB MHC-I tools API.
 - `npm run connectors:check:mhcflurry`: passed against the local `.venv-mhcflurry` install.
 - `npm run connectors:check:iedb-population`: passed against the local IEDB official standalone population-coverage package.
 
-Implementation status summary: the offline fixture/synthetic path, REST API, MCP tools, database repositories, core algorithms, project dashboard, workflow graph, evidence graph, candidate review, shortlist approval, diagnostics, JSON/CSV report artifacts, mandatory research-package ZIP export with checksums, evidence-graph/workflow-trace artifact exports, API liveness probe, API-owned `LIVE -> CACHED` reuse, IEDB MHC-I/MHC-II live adapters, optional local MHCflurry MHC-I adapter, official IEDB standalone population-coverage adapter, and mixed-method hybrid routing are implemented. Public deployment hardening and full browser/E2E rehearsal remain incomplete.
+Implementation status summary: the offline fixture/synthetic path, REST API, MCP tools, MCP-visible agentic workflow descriptor, database repositories, core algorithms, project dashboard, workflow graph, evidence graph, candidate review, shortlist approval, diagnostics, JSON/CSV report artifacts, mandatory research-package ZIP export with checksums, evidence-graph/workflow-trace artifact exports, API liveness probe, API-owned `LIVE -> CACHED` reuse, IEDB MHC-I/MHC-II live adapters, optional local MHCflurry MHC-I adapter, official IEDB standalone population-coverage adapter, and mixed-method hybrid routing are implemented. Public deployment hardening and full browser/E2E rehearsal remain incomplete.
 
 ## Phase 0 — Foundation
 
@@ -105,6 +105,7 @@ live cache, and never be presented as provider-produced, experimental, clinical,
 - [x] Add common tool envelopes, deterministic hashes, structured logging, and error mapping.
 - [x] Add task progress/cancellation checks to tool execution, including long prediction tools.
 - [x] Embed schema-validated example calls for every tool for NitroStudio discovery.
+- [x] Expose the internal agent/orchestrator model through the read-only `describe_agentic_workflow` MCP tool.
 - [x] Add MCP discovery, schema, deterministic execution, fallback, and logging contract tests.
 
 ## Phase 5 — Workflow and API

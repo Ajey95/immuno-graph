@@ -8,7 +8,9 @@ import type { z } from 'zod';
 import type { CapabilityPort } from '../common/capability-port.js';
 import { unavailableCapabilityPort } from '../common/capability-port.js';
 import { executeTool } from '../common/executor.js';
+import { describeAgenticWorkflow } from '../orchestration/agent-manifest.js';
 import {
+  describeAgenticWorkflowContract,
   explainCandidateContract,
   exportCandidatesContract,
   exportTraceContract,
@@ -142,6 +144,18 @@ export class ReportController {
   @ToolDecorator(toolOptions(exportTraceContract, CATEGORY))
   exportWorkflowTrace(input: unknown, context: ExecutionContext) {
     return this.invokeCapability(exportTraceContract, input, context);
+  }
+
+  @ToolDecorator(toolOptions(describeAgenticWorkflowContract, CATEGORY))
+  describeAgenticWorkflow(input: unknown, context: ExecutionContext) {
+    return executeTool({
+      toolName: describeAgenticWorkflowContract.name,
+      input,
+      inputSchema: describeAgenticWorkflowContract.inputSchema,
+      dataSchema: describeAgenticWorkflowContract.dataSchema,
+      context,
+      operation: (validated) => describeAgenticWorkflow(validated),
+    });
   }
 
   private invokeCapability<TInput extends z.ZodTypeAny, TData extends z.ZodTypeAny>(

@@ -3,7 +3,10 @@ import { performance } from 'node:perf_hooks';
 import { describe, expect, it } from 'vitest';
 
 import { calculateConsensus } from './consensus.js';
-import { optimizeMultiEpitopeConstruct, type ConstructCandidate } from './construct-optimization.js';
+import {
+  optimizeMultiEpitopeConstruct,
+  type ConstructCandidate,
+} from './construct-optimization.js';
 import { evaluateBaseHardConstraints } from './constraints.js';
 import { detectDuplicates } from './duplicates.js';
 import { validateFasta } from './fasta.js';

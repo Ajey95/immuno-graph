@@ -242,9 +242,7 @@ describe('scientific workflow prediction cache', () => {
   });
 });
 
-async function createRunningRun(
-  overrides: Partial<typeof runConfiguration> = {},
-): Promise<string> {
+async function createRunningRun(overrides: Partial<typeof runConfiguration> = {}): Promise<string> {
   const project = await database.repositories.projects.create({
     name: `Cache workflow ${randomUUID()}`,
     organism: 'Synthetic organism',

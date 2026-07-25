@@ -32,7 +32,9 @@ describe('local dev orchestration scripts', () => {
     expect(mcpDevScript).toContain("shell: process.platform === 'win32'");
     expect(mcpDevScript).toContain("const mcpEntryPoint = join(mcpRoot, 'dist', 'index.js')");
     expect(mcpDevScript).toContain("MCP_TRANSPORT_TYPE: process.env.MCP_TRANSPORT_TYPE ?? 'http'");
-    expect(mcpDevScript).toContain("MCP_HOST: process.env.MCP_HOST ?? process.env.HOST ?? '127.0.0.1'");
+    expect(mcpDevScript).toContain(
+      "MCP_HOST: process.env.MCP_HOST ?? process.env.HOST ?? '127.0.0.1'",
+    );
     expect(mcpDevScript).toContain("MCP_PORT: process.env.MCP_PORT ?? process.env.PORT ?? '3001'");
   });
 

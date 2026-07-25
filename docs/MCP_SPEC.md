@@ -266,6 +266,12 @@ Create immutable researcher-facing views and exports from approved structured da
 **Output:** ordered trace JSON artifact.  
 **Rule:** excludes secrets, unrestricted external bodies, and hidden chain-of-thought.
 
+### `describe_agentic_workflow`
+
+**Input:** run ID, run intent, and whether to include future interface agents.  
+**Output:** single-app deployment boundary, internal agent manifest, deterministic workflow graph, human approval gates, guardrails, and final research-package contract.  
+**Rule:** read-only and deterministic. It exposes agentic capability without creating additional deployed MCP servers.
+
 ### Prompts
 
 - `explain_candidate` — grounded explanation for `RESEARCHER` or `JUDGE` audience.

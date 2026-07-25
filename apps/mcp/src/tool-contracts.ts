@@ -1087,3 +1087,94 @@ export const exportTraceContract = defineContract({
   dataSchema: z.object({ artifact: artifactSchema, eventCount: nonnegativeInteger }),
   exampleInput: { runId: 'run-1', redactionProfile: 'mvp-safe-v1', idempotencyKey: 'trace-run-1' },
 });
+
+const toolGroupNameSchema = z.enum([
+  'Prediction Tools',
+  'Evidence Tools',
+  'Constraint Tools',
+  'Report Tools',
+]);
+
+const internalAgentSchema = z.object({
+  agentId: identifierSchema,
+  displayName: identifierSchema,
+  role: identifierSchema,
+  status: z.enum(['ACTIVE', 'INTERFACE_READY']),
+  scope: identifierSchema,
+  responsibilities: z.array(identifierSchema).min(1),
+  allowedToolGroups: z.array(toolGroupNameSchema).min(1),
+  decisionPolicy: z
+    .object({
+      mayGenerateScientificValues: z.boolean(),
+      mustUseMcpToolsForEvidence: z.boolean(),
+      mustExposeProvenance: z.boolean(),
+      abstainWhenEvidenceMissing: z.boolean(),
+    })
+    .strict(),
+});
+
+const workflowPlanNodeSchema = z.object({
+  nodeId: identifierSchema,
+  label: identifierSchema,
+  agentId: identifierSchema,
+  toolNames: z.array(identifierSchema),
+  approvalRequired: z.boolean(),
+  output: identifierSchema,
+});
+
+const workflowPlanEdgeSchema = z.object({
+  from: identifierSchema,
+  to: identifierSchema,
+  condition: identifierSchema,
+});
+
+export const describeAgenticWorkflowContract = defineContract({
+  name: 'describe_agentic_workflow',
+  description:
+    'Describe the single NitroStack MCP app internal agent graph, tool permissions, approvals, and final package contract.',
+  inputSchema: z
+    .object({
+      runId: identifierSchema,
+      runIntent: z.literal('MVP_EPITOPE_PRIORITIZATION'),
+      includeFutureInterfaces: z.boolean(),
+    })
+    .strict(),
+  dataSchema: z
+    .object({
+      deploymentBoundary: z.literal('ONE_NITROSTACK_MCP_APP'),
+      manifestVersion: identifierSchema,
+      planVersion: identifierSchema,
+      runId: identifierSchema,
+      runIntent: z.literal('MVP_EPITOPE_PRIORITIZATION'),
+      agents: z.array(internalAgentSchema).min(1),
+      workflowPlan: z
+        .object({
+          nodes: z.array(workflowPlanNodeSchema).min(1),
+          edges: z.array(workflowPlanEdgeSchema),
+          humanApprovalGates: z.array(identifierSchema).min(1),
+        })
+        .strict(),
+      guardrails: z
+        .object({
+          authRequired: z.literal(false),
+          conservationInMvp: z.literal(false),
+          toxicityInMvp: z.literal(false),
+          graphBepiMode: z.literal('FIXTURE_ONLY'),
+          syntheticScientificUse: z.literal(false),
+        })
+        .strict(),
+      finalResearchPackage: z
+        .object({
+          requiredArtifact: z.literal('research-package.zip'),
+          includesCsvExports: z.literal(true),
+          requiredSections: z.array(identifierSchema).min(1),
+        })
+        .strict(),
+    })
+    .strict(),
+  exampleInput: {
+    runId: 'run-1',
+    runIntent: 'MVP_EPITOPE_PRIORITIZATION' as const,
+    includeFutureInterfaces: true,
+  },
+});

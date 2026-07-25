@@ -204,6 +204,11 @@ Each agent must:
 - avoid fabricating scientific values;
 - emit traceable decisions.
 
+The single MCP app exposes this model through the read-only
+`describe_agentic_workflow` tool. That tool returns the internal agent manifest,
+workflow graph, approval gates, guardrails, and final research-package contract
+without creating additional deployed MCP servers.
+
 ### 5.1 Supervisor / Orchestrator Agent
 
 Owns the workflow graph.
@@ -354,7 +359,8 @@ Required MVP tools:
 Required MVP tools:
 
 - `generate_report`;
-- `export_candidates`.
+- `export_candidates`;
+- `describe_agentic_workflow`.
 
 ### 6.6 Structure Tools
 
@@ -876,4 +882,3 @@ preserves provenance,
 requires researcher approval,
 and exports a complete research package.
 ```
-

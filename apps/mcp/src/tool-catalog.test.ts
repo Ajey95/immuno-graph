@@ -18,6 +18,7 @@ const EXPECTED_TOOL_NAMES = [
   'categorize_candidates',
   'compute_consensus',
   'compute_consensus_batch',
+  'describe_agentic_workflow',
   'detect_overlapping_epitopes',
   'explain_candidate',
   'export_candidates',
@@ -312,6 +313,73 @@ describe('MCP tool catalog', () => {
       ok: true,
       data: { deterministic: { text: expect.any(String) }, llmParaphrase: null },
     });
+  });
+
+  it('exposes the single-app agentic orchestration plan without adding another MCP server', async () => {
+    const result = await toolByName('describe_agentic_workflow').execute(
+      {
+        runId: 'run-1',
+        runIntent: 'MVP_EPITOPE_PRIORITIZATION',
+        includeFutureInterfaces: true,
+      },
+      createContext(),
+    );
+    expect(result).toMatchObject({
+      ok: true,
+      data: {
+        deploymentBoundary: 'ONE_NITROSTACK_MCP_APP',
+        guardrails: {
+          authRequired: false,
+          conservationInMvp: false,
+          toxicityInMvp: false,
+          graphBepiMode: 'FIXTURE_ONLY',
+          syntheticScientificUse: false,
+        },
+        finalResearchPackage: {
+          requiredArtifact: 'research-package.zip',
+          includesCsvExports: true,
+        },
+      },
+    });
+    if (typeof result === 'object' && result !== null && 'data' in result) {
+      const data = result.data as {
+        agents: Array<{
+          agentId: string;
+          status: string;
+          decisionPolicy: {
+            mayGenerateScientificValues: boolean;
+            mustUseMcpToolsForEvidence: boolean;
+            mustExposeProvenance: boolean;
+          };
+        }>;
+        workflowPlan: { nodes: Array<{ nodeId: string; toolNames: string[] }> };
+        finalResearchPackage: { requiredSections: string[] };
+      };
+      expect(data.agents.map((agent) => agent.agentId)).toEqual([
+        'supervisor-orchestrator',
+        'sequence-validation',
+        'immunology',
+        'structure',
+        'compound',
+        'ranking',
+        'verifier',
+        'reporting',
+      ]);
+      expect(
+        data.agents.every(
+          (agent) =>
+            agent.decisionPolicy.mayGenerateScientificValues === false &&
+            agent.decisionPolicy.mustUseMcpToolsForEvidence === true &&
+            agent.decisionPolicy.mustExposeProvenance === true,
+        ),
+      ).toBe(true);
+      expect(data.workflowPlan.nodes.at(-1)).toMatchObject({
+        nodeId: 'generate-research-package',
+        toolNames: ['generate_report', 'export_candidates', 'export_workflow_trace'],
+      });
+      expect(data.finalResearchPackage.requiredSections).toContain('construct/');
+      expect(data.finalResearchPackage.requiredSections).toContain('reports/');
+    }
   });
 
   it('emits structured start and finish logs without sequence bodies', async () => {

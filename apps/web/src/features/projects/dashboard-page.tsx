@@ -205,7 +205,11 @@ function RunStatusIndicator({ status }: { status: string | null | undefined }) {
       <Badge variant={variant}>
         <span
           aria-hidden="true"
-          className={isActive ? 'size-2 rounded-full bg-current animate-pulse' : 'size-2 rounded-full bg-current'}
+          className={
+            isActive
+              ? 'size-2 rounded-full bg-current animate-pulse'
+              : 'size-2 rounded-full bg-current'
+          }
         />
         {label}
       </Badge>

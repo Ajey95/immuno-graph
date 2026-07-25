@@ -74,11 +74,7 @@ const heading = (title: string, description: string) => (
   </div>
 );
 
-const projectNameSuggestions = [
-  'Dengue demo run',
-  'Influenza demo run',
-  'COVID spike demo',
-];
+const projectNameSuggestions = ['Dengue demo run', 'Influenza demo run', 'COVID spike demo'];
 
 const organismSuggestions = ['Dengue virus', 'Influenza A virus', 'SARS-CoV-2'];
 
@@ -799,14 +795,24 @@ export function RunPage() {
     </>
   );
 }
-function Stat({ label, value, loading = false }: { label: string; value: string; loading?: boolean }) {
+function Stat({
+  label,
+  value,
+  loading = false,
+}: {
+  label: string;
+  value: string;
+  loading?: boolean;
+}) {
   return (
     <Card>
       <CardHeader>
         <CardDescription>{label}</CardDescription>
         <CardTitle className="flex items-center gap-2">
           <span>{value}</span>
-          {loading ? <Loader2 aria-hidden="true" className="size-4 animate-spin text-muted-foreground" /> : null}
+          {loading ? (
+            <Loader2 aria-hidden="true" className="size-4 animate-spin text-muted-foreground" />
+          ) : null}
         </CardTitle>
       </CardHeader>
     </Card>
@@ -1436,10 +1442,7 @@ function CandidateSubviews({
         </div>
         {view === 'sequence' ? (
           sequence.isError ? (
-            <ErrorState
-              message={sequence.error.message}
-              onRetry={() => void sequence.refetch()}
-            />
+            <ErrorState message={sequence.error.message} onRetry={() => void sequence.refetch()} />
           ) : (
             <SequenceMap data={sequence.data} loading={sequence.isLoading} />
           )
@@ -1448,10 +1451,7 @@ function CandidateSubviews({
           coverage.isLoading ? (
             <LoadingState label="Loading population coverage" />
           ) : coverage.isError ? (
-            <ErrorState
-              message={coverage.error.message}
-              onRetry={() => void coverage.refetch()}
-            />
+            <ErrorState message={coverage.error.message} onRetry={() => void coverage.refetch()} />
           ) : !coverage.data || coverage.data.populations.length === 0 ? (
             <EmptyState
               title="No population coverage"
@@ -1620,73 +1620,73 @@ function CandidateSubviews({
               </Alert>
             ) : (
               <>
-            <label className="flex items-center gap-2">
-              <Checkbox
-                aria-label="Acknowledge computational-only shortlist status"
-                checked={acknowledged}
-                onCheckedChange={(checked) => setAcknowledged(checked === true)}
-              />
-              I acknowledge the computational-only status.
-            </label>
-            <p className="text-sm text-muted-foreground">
-              {selectedIds.length} candidate{selectedIds.length === 1 ? '' : 's'} selected from
-              snapshot {rankingSnapshotHash.slice(0, 12)}…
-            </p>
-            {selectedCandidates.length === 0 ? (
-              <Alert>
-                <AlertTriangle aria-hidden="true" />
-                <AlertTitle>No candidates selected</AlertTitle>
-                <AlertDescription>
-                  Select one or more non-rejected candidates from the Rankings table before
-                  approving the shortlist.
-                </AlertDescription>
-              </Alert>
-            ) : (
-              <div className="rounded-md border p-3">
-                <p className="mb-2 text-sm font-medium">Selected shortlist candidates</p>
-                <ul className="grid gap-1 text-sm">
-                  {selectedCandidates.map((candidate) => (
-                    <li key={candidate.id}>
-                      #{candidate.rank} <span className="font-mono">{candidate.peptide}</span> ·{' '}
-                      {candidate.category} · score {candidate.finalScore.toFixed(3)}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            <Textarea
-              placeholder="Optional approval note"
-              value={approvalNote}
-              onChange={(event) => setApprovalNote(event.currentTarget.value)}
-            />
-            {approve.isError ? (
-              <Alert variant="destructive">
-                <AlertTitle>Shortlist approval failed</AlertTitle>
-                <AlertDescription>{approve.error.message}</AlertDescription>
-              </Alert>
-            ) : null}
-            {approve.isSuccess ? (
-              <Alert>
-                <CheckCircle2 aria-hidden="true" />
-                <AlertTitle>Shortlist approved</AlertTitle>
-                <AlertDescription>Report generation is now available.</AlertDescription>
-              </Alert>
-            ) : null}
-            <Button
-              disabled={!acknowledged || selectedIds.length === 0 || approve.isPending}
-              onClick={() =>
-                approve.mutate(
-                  createShortlistApprovalInput(
-                    rankingSnapshotHash,
-                    candidateIds,
-                    selectedIds,
-                    approvalNote,
-                  ),
-                )
-              }
-            >
-              {approve.isPending ? 'Approving…' : 'Approve shortlist'}
-            </Button>
+                <label className="flex items-center gap-2">
+                  <Checkbox
+                    aria-label="Acknowledge computational-only shortlist status"
+                    checked={acknowledged}
+                    onCheckedChange={(checked) => setAcknowledged(checked === true)}
+                  />
+                  I acknowledge the computational-only status.
+                </label>
+                <p className="text-sm text-muted-foreground">
+                  {selectedIds.length} candidate{selectedIds.length === 1 ? '' : 's'} selected from
+                  snapshot {rankingSnapshotHash.slice(0, 12)}…
+                </p>
+                {selectedCandidates.length === 0 ? (
+                  <Alert>
+                    <AlertTriangle aria-hidden="true" />
+                    <AlertTitle>No candidates selected</AlertTitle>
+                    <AlertDescription>
+                      Select one or more non-rejected candidates from the Rankings table before
+                      approving the shortlist.
+                    </AlertDescription>
+                  </Alert>
+                ) : (
+                  <div className="rounded-md border p-3">
+                    <p className="mb-2 text-sm font-medium">Selected shortlist candidates</p>
+                    <ul className="grid gap-1 text-sm">
+                      {selectedCandidates.map((candidate) => (
+                        <li key={candidate.id}>
+                          #{candidate.rank} <span className="font-mono">{candidate.peptide}</span> ·{' '}
+                          {candidate.category} · score {candidate.finalScore.toFixed(3)}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                <Textarea
+                  placeholder="Optional approval note"
+                  value={approvalNote}
+                  onChange={(event) => setApprovalNote(event.currentTarget.value)}
+                />
+                {approve.isError ? (
+                  <Alert variant="destructive">
+                    <AlertTitle>Shortlist approval failed</AlertTitle>
+                    <AlertDescription>{approve.error.message}</AlertDescription>
+                  </Alert>
+                ) : null}
+                {approve.isSuccess ? (
+                  <Alert>
+                    <CheckCircle2 aria-hidden="true" />
+                    <AlertTitle>Shortlist approved</AlertTitle>
+                    <AlertDescription>Report generation is now available.</AlertDescription>
+                  </Alert>
+                ) : null}
+                <Button
+                  disabled={!acknowledged || selectedIds.length === 0 || approve.isPending}
+                  onClick={() =>
+                    approve.mutate(
+                      createShortlistApprovalInput(
+                        rankingSnapshotHash,
+                        candidateIds,
+                        selectedIds,
+                        approvalNote,
+                      ),
+                    )
+                  }
+                >
+                  {approve.isPending ? 'Approving…' : 'Approve shortlist'}
+                </Button>
               </>
             )}
           </div>

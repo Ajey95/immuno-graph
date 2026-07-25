@@ -2,8 +2,7 @@ export default {
   app: {
     name: 'immunograph-mcp',
     version: '0.1.0',
-    description:
-      'ImmunoGraph MCP app exposing Prediction, Evidence, Constraint, and Report tools.',
+    description: 'ImmunoGraph MCP app exposing Prediction, Evidence, Constraint, and Report tools.',
   },
   server: {
     host: process.env.HOST ?? process.env.MCP_HOST ?? '0.0.0.0',
