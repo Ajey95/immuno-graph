@@ -103,7 +103,14 @@ def load_inputs(package_root: Path) -> tuple[Path, list[Path], list[Atom], list[
     return receptor_path, existing_pose_paths, receptor, ligands
 
 
-def render_with_pymol(package_root: Path, output: Path, receptor_path: Path, pose_paths: list[Path]) -> dict[str, object]:
+def render_with_pymol(
+    package_root: Path,
+    output: Path,
+    receptor_path: Path,
+    pose_paths: list[Path],
+    receptor: list[Atom],
+    ligands: list[list[Atom]],
+) -> dict[str, object]:
     pymol_command = os.environ.get("PYMOL_COMMAND", "pymol")
     command_parts = shlex.split(pymol_command, posix=os.name != "nt")
     executable = command_parts[0]
@@ -120,8 +127,12 @@ def render_with_pymol(package_root: Path, output: Path, receptor_path: Path, pos
                 "ligand": str(path.resolve()),
                 "main": str((temp_dir / f"{label.lower()}_main.png").resolve()),
                 "inset": str((temp_dir / f"{label.lower()}_inset.png").resolve()),
+                "nearbyResidues": [
+                    {"chain": chain, "residue": residue, "residueId": residue_id}
+                    for (chain, residue, residue_id), _distance in nearby_residues(receptor, ligand)[:5]
+                ],
             }
-            for label, path in zip(["A", "B", "C"], pose_paths)
+            for label, path, ligand in zip(["A", "B", "C"], pose_paths, ligands)
         ]
         panel_manifest.write_text(json.dumps(panels, indent=2), encoding="utf-8")
         pymol_script.write_text(
@@ -148,8 +159,9 @@ cmd.set('stick_radius', 0.16)
 cmd.set('dash_width', 2.5)
 cmd.set('dash_gap', 0.22)
 cmd.set('dash_color', 'red')
-cmd.set('label_size', 18)
+cmd.set('label_size', 24)
 cmd.set('label_color', 'forest')
+cmd.set('label_position', [1.5, 1.5, 1.5])
 
 
 def style_ligand(selection: str) -> None:
@@ -186,7 +198,11 @@ def render_panel(panel: dict[str, str]) -> None:
     cmd.png(panel['main'], width=560, height=390, dpi=220, ray=1)
 
     cmd.hide('cartoon', 'receptor')
-    cmd.label('pocket and name CA', 'resn + resi')
+    for residue in panel.get('nearbyResidues', []):
+        selection = f"pocket and chain {{residue['chain']}} and resi {{residue['residueId']}} and name CA"
+        if cmd.count_atoms(selection) == 0:
+            selection = f"pocket and chain {{residue['chain']}} and resi {{residue['residueId']}} and elem C"
+        cmd.label(selection, 'resn + resi')
     cmd.zoom('ligand or pocket', 1.8)
     cmd.png(panel['inset'], width=560, height=390, dpi=220, ray=1)
 
@@ -216,6 +232,8 @@ cmd.quit()
 
         compose_pymol_panels(
             panels=panels,
+            receptor=receptor,
+            ligands=ligands,
             output=output,
             title="ImmunoGraph actual docking visualization",
             subtitle="RCSB 1UYD receptor + PubChem CID 2244 ligand; poses from AutoDock Vina; contacts from PyMOL geometry",
@@ -227,26 +245,91 @@ cmd.quit()
         }
 
 
-def compose_pymol_panels(panels: list[dict[str, str]], output: Path, title: str, subtitle: str) -> None:
+def polar_contacts(receptor: list[Atom], ligand: list[Atom], cutoff: float = 3.6) -> list[tuple[float, Atom, Atom]]:
+    pocket_keys = {key for key, _ in nearby_residues(receptor, ligand)}
+    pocket_atoms = [atom for atom in receptor if residue_key(atom) in pocket_keys]
+    receptor_hetero = [atom for atom in pocket_atoms if atom.element in {"N", "O", "S"}]
+    ligand_hetero = [atom for atom in ligand if atom.element in {"N", "O", "S", "CL"}]
+    contacts: list[tuple[float, Atom, Atom]] = []
+    for ligand_atom in ligand_hetero:
+        for receptor_atom in receptor_hetero:
+            contact_distance = distance(ligand_atom, receptor_atom)
+            if 2.2 <= contact_distance <= cutoff:
+                contacts.append((contact_distance, ligand_atom, receptor_atom))
+    return sorted(contacts, key=lambda item: item[0])[:5]
+
+
+def residue_label(key: tuple[str, str, str]) -> str:
+    chain, residue, residue_id = key
+    return f"{residue}{residue_id}" if chain in {"", "A"} else f"{residue}{residue_id}:{chain}"
+
+
+def draw_label_box(
+    draw: ImageDraw.ImageDraw,
+    origin: tuple[int, int],
+    lines: list[str],
+    font,
+    title_fill=(12, 86, 63),
+    body_fill=(42, 60, 56),
+):
+    x, y = origin
+    line_height = 22
+    width = max(210, max(len(line) for line in lines) * 9 + 22)
+    height = 14 + line_height * len(lines)
+    draw.rounded_rectangle((x, y, x + width, y + height), radius=10, fill=(255, 255, 255), outline=(166, 190, 183), width=1)
+    for idx, line in enumerate(lines):
+        fill = title_fill if idx == 0 else body_fill
+        draw.text((x + 10, y + 8 + idx * line_height), line, fill=fill, font=font)
+
+
+def compose_pymol_panels(
+    panels: list[dict[str, str]],
+    receptor: list[Atom],
+    ligands: list[list[Atom]],
+    output: Path,
+    title: str,
+    subtitle: str,
+) -> None:
     image = Image.new("RGB", (1240, 1540), (255, 255, 255))
     draw = ImageDraw.Draw(image)
     font, small_font = load_fonts()
     draw.text((34, 18), title, fill=(12, 56, 48), font=font)
     draw.text((34, 54), subtitle, fill=(70, 92, 88), font=small_font)
     y_positions = [100, 565, 1030]
-    for panel, top in zip(panels, y_positions):
+    for pose_index, (panel, top, ligand) in enumerate(zip(panels, y_positions, ligands), start=1):
         main = Image.open(panel["main"]).convert("RGB")
         inset = Image.open(panel["inset"]).convert("RGB")
         image.paste(main, (60, top + 35))
         image.paste(inset, (640, top + 35))
         draw.text((34, top), panel["label"], fill=(20, 20, 20), font=font)
+        draw.text((82, top + 402), f"Pose {pose_index}: receptor ribbon + docked ligand", fill=(52, 72, 68), font=small_font)
         draw.rectangle((630, top + 25, 1210, top + 435), outline=(45, 45, 45), width=2)
         draw.rectangle((365, top + 205, 535, top + 355), outline=(45, 45, 45), width=2)
         draw.line((535, top + 205, 630, top + 25), fill=(70, 70, 70), width=1)
         draw.line((535, top + 355, 630, top + 435), fill=(70, 70, 70), width=1)
+
+        nearest = nearby_residues(receptor, ligand)[:5]
+        contacts = polar_contacts(receptor, ligand)[:4]
+        residue_lines = ["Nearby residues"] + [
+            f"{residue_label(key)}  {min_distance:.1f} A" for key, min_distance in nearest
+        ]
+        contact_lines = ["Polar contacts"] + [
+            f"{contact_distance:.1f} A  LIG-{receptor_atom.residue}{receptor_atom.residue_id}"
+            for contact_distance, _ligand_atom, receptor_atom in contacts
+        ]
+        if len(contact_lines) == 1:
+            contact_lines.append("none <= 3.6 A")
+        draw_label_box(draw, (652, top + 44), residue_lines, small_font)
+        draw_label_box(draw, (972, top + 320), contact_lines, small_font, title_fill=(116, 39, 39), body_fill=(83, 45, 45))
     draw.text(
-        (34, 1495),
+        (34, 1482),
         "Cartoon: receptor ribbon | Yellow: docked ligand | Green: nearby residues | Red dashed: inferred polar contacts",
+        fill=(60, 60, 60),
+        font=small_font,
+    )
+    draw.text(
+        (34, 1508),
+        "Callouts list closest pocket residues, minimum residue distances, and inferred polar contact distances from actual coordinates.",
         fill=(60, 60, 60),
         font=small_font,
     )
@@ -474,7 +557,7 @@ def main(argv: list[str] | None = None) -> int:
     render_info: dict[str, object]
     if args.renderer in {"auto", "pymol"}:
         try:
-            render_info = render_with_pymol(package_root, output, receptor_path, pose_paths[:3])
+            render_info = render_with_pymol(package_root, output, receptor_path, pose_paths[:3], receptor, ligands[:3])
         except Exception as exc:
             renderer_error = str(exc)
             if args.renderer == "pymol":
@@ -489,6 +572,8 @@ def main(argv: list[str] | None = None) -> int:
         "preferredRenderer": "pymol-headless",
         "fallbackRenderer": "coordinate-projection-pillow",
         "rendererError": renderer_error,
+        "labelsIncluded": True,
+        "labelTypes": ["nearby_residues", "minimum_distances", "polar_contacts", "pose_numbers", "legend"],
         "receptorAtoms": len(receptor),
         "ligandPoseCountRendered": min(3, len(ligands)),
         "output": str(output),
