@@ -84,7 +84,6 @@ export function loadMcpEnvironment(): McpEnvironment {
     HOST: host,
     PORT: parsed.PORT ?? parsed.MCP_PORT,
     MCP_HOST: parsed.MCP_HOST ?? host,
-    MCP_TRANSPORT_TYPE:
-      parsed.MCP_TRANSPORT_TYPE ?? (parsed.NODE_ENV === 'production' ? 'dual' : 'http'),
+    MCP_TRANSPORT_TYPE: parsed.MCP_TRANSPORT_TYPE ?? 'http',
   };
 }

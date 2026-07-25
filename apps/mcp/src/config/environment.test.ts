@@ -21,14 +21,14 @@ describe('MCP environment', () => {
     });
   });
 
-  it('binds dual transport to all interfaces in production cloud runtimes', () => {
+  it('binds HTTP transport to all interfaces in production cloud runtimes', () => {
     process.env = { NODE_ENV: 'production', PORT: '8080' };
 
     expect(loadMcpEnvironment()).toMatchObject({
       HOST: '0.0.0.0',
       PORT: 8080,
       MCP_HOST: '0.0.0.0',
-      MCP_TRANSPORT_TYPE: 'dual',
+      MCP_TRANSPORT_TYPE: 'http',
     });
   });
 

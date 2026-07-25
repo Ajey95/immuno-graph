@@ -124,8 +124,9 @@ npm run db:seed
 npm run dev
 ```
 
-`npm install` generates the Prisma client automatically. The explicit
-`npm run db:generate` command remains available after schema changes.
+Run `npm run db:generate` after a dependency-only install or a Prisma schema
+change. Production builds perform this generation automatically after the full
+workspace source has been copied.
 
 `npm run dev` starts the web app, Fastify API, and NitroStack MCP server together. Defaults are web `5173`, API `3000`, and MCP `3001`. The API endpoint can be changed with `MCP_SERVER_URL`.
 

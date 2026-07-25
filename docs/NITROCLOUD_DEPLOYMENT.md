@@ -65,7 +65,7 @@ Set these non-secret values in NitroCloud:
 NODE_ENV=production
 LOG_LEVEL=info
 HOST=0.0.0.0
-MCP_TRANSPORT_TYPE=dual
+MCP_TRANSPORT_TYPE=http
 EXECUTION_MODE=HYBRID
 DEMO_MODE=true
 LLM_ENABLED=false

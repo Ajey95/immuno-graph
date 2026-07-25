@@ -17,10 +17,11 @@
     "apps/mcp"
   ],
   "scripts": {
-    "prebuild": "npm run db:generate",
-    "predev": "npm run db:generate && npm run db:migrate --workspace @immunograph/database",
-    "pretest": "npm run db:generate",
-    "pretypecheck": "npm run db:generate",
+    "workspace:install:ensure": "node scripts/ensure-workspace-install.mjs",
+    "prebuild": "npm run workspace:install:ensure && npm run db:generate",
+    "predev": "npm run workspace:install:ensure && npm run db:generate && npm run db:migrate --workspace @immunograph/database",
+    "pretest": "npm run workspace:install:ensure && npm run db:generate",
+    "pretypecheck": "npm run workspace:install:ensure && npm run db:generate",
     "build": "npm run build:types && npm run build --workspace @immunograph/web",
     "build:types": "tsc -b",
     "dev": "concurrently --kill-others-on-fail --names web,api,mcp \"npm run dev --workspace @immunograph/web\" \"npm run dev --workspace @immunograph/api\" \"npm run dev --workspace @immunograph/mcp\"",
