@@ -1,6 +1,6 @@
 import 'reflect-metadata';
 
-import { buildTools, McpApplicationFactory } from '@nitrostack/core';
+import { buildTools, getModuleMetadata, McpApplicationFactory } from '@nitrostack/core';
 import type { ExecutionContext, JsonValue, Logger } from '@nitrostack/core';
 import { loadFixtureRegistry } from '@immunograph/database';
 import { describe, expect, it } from 'vitest';
@@ -75,6 +75,23 @@ const toolByName = (name: string) => {
 };
 
 describe('MCP tool catalog', () => {
+  it('configures NitroStack OAuth discovery so cloud startup does not log missing OAUTH_CONFIG', () => {
+    const imports = getModuleMetadata(AppModule)?.imports ?? [];
+    const oauthImport = imports.find(
+      (imported) =>
+        typeof imported === 'object' &&
+        imported !== null &&
+        imported.providers?.some(
+          (provider) =>
+            typeof provider === 'object' &&
+            provider !== null &&
+            'provide' in provider &&
+            provider.provide === 'OAUTH_CONFIG',
+        ),
+    );
+    expect(oauthImport).toBeDefined();
+  });
+
   it('registers every group in the single NitroStack application module', async () => {
     const application = await McpApplicationFactory.create(AppModule);
     const registered = (application as unknown as { tools: unknown[] }).tools;

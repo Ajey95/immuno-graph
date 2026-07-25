@@ -1,6 +1,6 @@
 import 'dotenv/config';
 
-import { McpApp, Module } from '@nitrostack/core';
+import { McpApp, Module, OAuthModule } from '@nitrostack/core';
 
 import { ConstraintModule } from './constraint/constraint.module.js';
 import { EvidenceModule } from './evidence/evidence.module.js';
@@ -13,6 +13,12 @@ const transportType = (process.env.MCP_TRANSPORT_TYPE ??
 const httpHost =
   process.env.HOST ?? process.env.MCP_HOST ?? (nodeEnv === 'production' ? '0.0.0.0' : '127.0.0.1');
 const httpPort = Number(process.env.PORT ?? process.env.MCP_PORT ?? 3001);
+const resourceUri =
+  process.env.OAUTH_RESOURCE_URI ??
+  process.env.RESOURCE_URI ??
+  `http://${httpHost}:${httpPort}/mcp`;
+const authorizationServer =
+  process.env.OAUTH_AUTH_SERVER ?? process.env.AUTH_SERVER_URL ?? new URL(resourceUri).origin;
 
 @McpApp({
   module: AppModule,
@@ -31,6 +37,22 @@ const httpPort = Number(process.env.PORT ?? process.env.MCP_PORT ?? 3001);
 })
 @Module({
   name: 'immunograph',
-  imports: [PredictionModule, EvidenceModule, ConstraintModule, ReportModule],
+  imports: [
+    OAuthModule.forRoot({
+      resourceUri,
+      authorizationServers: [authorizationServer],
+      scopesSupported: ['mcp:read', 'mcp:write', 'tools:execute'],
+      required: process.env.OAUTH_REQUIRED === 'true',
+      http: {
+        host: httpHost,
+        port: httpPort,
+        basePath: '/mcp',
+      },
+    }),
+    PredictionModule,
+    EvidenceModule,
+    ConstraintModule,
+    ReportModule,
+  ],
 })
 export class AppModule {}

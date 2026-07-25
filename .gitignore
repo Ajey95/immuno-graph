@@ -21,3 +21,7 @@ apps/web/.vite/
 playwright-report/
 test-results/
 nitrocloud-smoke*.log
+local-review-output/
+tools/
+C*UsersvvtheDownloadsprojectsimunograph/
+C*UsersvvtheDownloadsprojectsimmuno-graph/
