@@ -478,6 +478,8 @@ export class StructureController {
           const command = process.env.FREESASA_COMMAND ?? 'freesasa';
           const result = await this.runtime.runCommand(command, [
             value.mappings[0]?.structureId ?? 'structure.pdb',
+            '--mappings',
+            JSON.stringify(value.mappings),
           ]);
           const score = parseFirstUnitInterval(result.stdout);
           return {
@@ -699,9 +701,13 @@ function parseFirstUnitInterval(output: string): number {
 }
 
 function parseFpocketPockets(structureId: string, output: string) {
-  const match = output.match(
-    /Pocket\s+(\d+)\s+Score\s+(-?\d+(?:\.\d+)?)\s+DrugScore\s+(0(?:\.\d+)?|1(?:\.0+)?)/iu,
-  );
+  const match =
+    output.match(
+      /Pocket\s+(\d+)\s+Score\s+(-?\d+(?:\.\d+)?)\s+DrugScore\s+(0(?:\.\d+)?|1(?:\.0+)?)/iu,
+    ) ??
+    output.match(
+      /Pocket\s+(\d+)\s*:[\s\S]*?Score\s*:\s*(-?\d+(?:\.\d+)?)[\s\S]*?Druggability\s+Score\s*:\s*(0(?:\.\d+)?|1(?:\.0+)?)/iu,
+    );
   if (match === null) {
     return [
       {

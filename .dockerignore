@@ -17,3 +17,5 @@ data/generated/*
 tmp-*.log
 tmp-*.ts
 .superpowers
+tools
+local-review-output

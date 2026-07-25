@@ -13,6 +13,9 @@ export default tseslint.config(
       '**/.venv*/**',
       '**/*.d.ts',
       'data/generated/**',
+      'local-review-output/**',
+      'tools/**',
+      'C*UsersvvtheDownloadsprojectsimmuno-graph/**',
     ],
   },
   eslint.configs.recommended,
@@ -34,6 +37,17 @@ export default tseslint.config(
       ecmaVersion: 2022,
       globals: globals.node,
       sourceType: 'module',
+    },
+  },
+  {
+    files: ['scripts/**/*.cjs'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      globals: globals.node,
+      sourceType: 'commonjs',
+    },
+    rules: {
+      '@typescript-eslint/no-require-imports': 'off',
     },
   },
   {

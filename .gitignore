@@ -18,3 +18,7 @@ data/generated/*
 apps/web/.vite/
 .superpowers/
 .tmp-dev-logs/
+tools/bin/
+tools/src/
+tools/micromamba/
+tools/science-env/

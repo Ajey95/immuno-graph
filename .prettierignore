@@ -4,6 +4,8 @@ coverage
 package-lock.json
 data/generated
 local-review-output
+tools
+C*UsersvvtheDownloadsprojectsimmuno-graph
 *.db
 *.db-journal
 .vitest-debug.json

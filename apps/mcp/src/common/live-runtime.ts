@@ -4,6 +4,7 @@ import { promisify } from 'node:util';
 import { ToolExecutionError } from './executor.js';
 
 const execFileAsync = promisify(execFile);
+const windowsBatchPattern = /\.(?:cmd|bat)$/i;
 
 export interface CommandResult {
   stdout: string;
@@ -44,8 +45,13 @@ export const defaultLiveToolRuntime: LiveToolRuntime = {
     return response.json() as Promise<unknown>;
   },
   async runCommand(command, args) {
+    const isWindowsBatch = process.platform === 'win32' && windowsBatchPattern.test(command);
+    const executable = isWindowsBatch ? 'cmd.exe' : command;
+    const executableArgs = isWindowsBatch
+      ? ['/d', '/s', '/c', command.replaceAll('/', '\\'), ...args]
+      : args;
     try {
-      const { stdout, stderr } = await execFileAsync(command, args, {
+      const { stdout, stderr } = await execFileAsync(executable, executableArgs, {
         encoding: 'utf8',
         windowsHide: true,
         timeout: Number(process.env.DOCKING_COMMAND_TIMEOUT_MS ?? 120_000),

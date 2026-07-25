@@ -617,7 +617,10 @@ describe('MCP tool catalog', () => {
       runCommand: async (command, args) => {
         structureCommandCalls.push({ command, args });
         return {
-          stdout: command === 'freesasa' ? '1 A 1 0.42' : 'Pocket 1 Score 12.5 DrugScore 0.61',
+          stdout:
+            command === 'freesasa'
+              ? '1 A 1 0.42'
+              : ['Pocket 1 :', '\tScore : \t12.5', '\tDruggability Score : \t0.61'].join('\n'),
           stderr: '',
         };
       },
@@ -710,6 +713,19 @@ describe('MCP tool catalog', () => {
         createContext(),
       );
     expect(structureCommandCalls.some((call) => call.command === 'freesasa')).toBe(true);
+    expect(structureCommandCalls.find((call) => call.command === 'freesasa')?.args).toEqual([
+      '1ABC',
+      '--mappings',
+      JSON.stringify([
+        {
+          candidateId: 'candidate-1',
+          structureId: '1ABC',
+          chainId: 'A',
+          start: 1,
+          end: 9,
+        },
+      ]),
+    ]);
     expect(accessibility).toMatchObject({
       ok: true,
       data: {

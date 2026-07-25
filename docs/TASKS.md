@@ -160,7 +160,7 @@ live cache, and never be presented as provider-produced, experimental, clinical,
 - [ ] Install and verify MHCflurry CLI/models in the production deployment runtime before enabling `MHCFLURRY_ENABLED=true` there.
 - [x] Add official IEDB standalone population-coverage connector behind `IEDB_POPULATION_COVERAGE_ENABLED`.
 - [x] Add repeatable `npm run connectors:install:iedb-population` and `npm run connectors:check:iedb-population` commands.
-- [ ] Verify IEDB population coverage package installation in the production deployment runtime.
+- [x] Verify IEDB population coverage package installation in the production Docker runtime.
 - [ ] Register score profiles for each enabled method/version.
 - [x] Add parser samples and tests.
 - [x] Verify `LIVE -> CACHED` behavior.
@@ -168,7 +168,8 @@ live cache, and never be presented as provider-produced, experimental, clinical,
 - [x] Implement production live structure retrieval adapters for RCSB PDB and AlphaFold DB.
 - [x] Implement production live chemistry adapters for PubChem, Open Babel, and RDKit.
 - [x] Implement production live docking adapters for AutoDock Vina, PLIP, fpocket, FreeSASA, and Mol* view-state.
-- [ ] Verify Docker image build with NitroStack Cloud runtime once Docker Desktop or cloud builder is available.
+- [x] Verify MCP Docker image build with the production science runtime installed locally.
+- [ ] Rehearse the same image on NitroStack Cloud once cloud deployment credentials are available.
 
 ## Phase 7 — UI
 
