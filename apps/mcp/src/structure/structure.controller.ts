@@ -10,6 +10,8 @@ import {
   unitIntervalSchema,
 } from '../common/contracts.js';
 import { executeTool, ToolExecutionError } from '../common/executor.js';
+import { defaultLiveToolRuntime, type LiveToolRuntime } from '../common/live-runtime.js';
+import { loadMcpEnvironment } from '../config/environment.js';
 
 const CATEGORY = 'Structure Tools';
 const sourceStatus = z.enum(['LIVE', 'CACHED', 'FIXTURE']);
@@ -167,6 +169,65 @@ const confidenceData = z
   })
   .strict();
 
+const pocketInput = z
+  .object({
+    runId: identifierSchema,
+    structureId: identifierSchema,
+    structureArtifactRef: identifierSchema,
+    method: z.enum(['fpocket', 'fixture-pocket-detector']),
+  })
+  .strict();
+const pocketData = z
+  .object({
+    pockets: z.array(
+      z
+        .object({
+          pocketId: identifierSchema,
+          structureId: identifierSchema,
+          score: z.number().finite(),
+          druggabilityScore: unitIntervalSchema,
+          center: z
+            .object({
+              x: z.number().finite(),
+              y: z.number().finite(),
+              z: z.number().finite(),
+            })
+            .strict(),
+          sourceStatus,
+        })
+        .strict(),
+    ),
+    provenance: connectorProvenanceSchema,
+  })
+  .strict();
+
+const molstarInput = z
+  .object({
+    runId: identifierSchema,
+    viewId: identifierSchema,
+    structureArtifactRef: identifierSchema,
+    ligandArtifactRef: identifierSchema.optional(),
+    mode: z.enum(['STRUCTURE', 'DOCKING']),
+  })
+  .strict();
+const molstarData = z
+  .object({
+    viewer: z
+      .object({
+        viewId: identifierSchema,
+        viewer: z.literal('Mol*'),
+        stateRef: identifierSchema,
+        structureArtifactRef: identifierSchema,
+        ligandArtifactRef: identifierSchema.optional(),
+        mode: z.enum(['STRUCTURE', 'DOCKING']),
+        sourceStatus,
+        scientificUse: z.boolean(),
+      })
+      .strict(),
+    provenance: connectorProvenanceSchema,
+  })
+  .strict();
+
 const exampleFetch = {
   runId: 'run-1',
   targetId: 'target-1',
@@ -177,6 +238,15 @@ const exampleFetch = {
 
 @ControllerDecorator()
 export class StructureController {
+  private runtime: LiveToolRuntime = defaultLiveToolRuntime;
+  private runtimeInjected = false;
+
+  useRuntime(runtime: LiveToolRuntime): this {
+    this.runtime = runtime;
+    this.runtimeInjected = true;
+    return this;
+  }
+
   @Tool({
     name: 'fetch_structure',
     description: 'Fetch or replay a structure record with explicit source provenance.',
@@ -192,9 +262,20 @@ export class StructureController {
       inputSchema: fetchStructureInput,
       dataSchema: fetchStructureData,
       context,
-      operation: (value) => {
-        const status: z.infer<typeof sourceStatus> =
-          value.source === 'FIXTURE' ? 'FIXTURE' : fallbackStatus(value.fallbackPolicy);
+      operation: async (value) => {
+        if (value.source !== 'FIXTURE') {
+          try {
+            const live = await this.fetchLiveStructure(
+              value as z.infer<typeof fetchStructureInput> & {
+                source: 'RCSB_PDB' | 'ALPHAFOLD_DB';
+              },
+            );
+            return live;
+          } catch (error) {
+            if (!fixtureFallbackAllowed(value.fallbackPolicy)) throw error;
+          }
+        }
+        const status: z.infer<typeof sourceStatus> = 'FIXTURE';
         return {
           structure: {
             structureId: `${value.targetId}-${value.accession}`,
@@ -205,14 +286,71 @@ export class StructureController {
             format: 'FIXTURE_JSON' as const,
             chainIds: ['A'],
             artifactRef: `mcp://structures/${value.runId}/${value.accession}`,
-            scientificUse: status === 'LIVE',
-            validationStatus:
-              status === 'LIVE' ? ('SCIENTIFIC' as const) : ('VERIFIED_FIXTURE' as const),
+            scientificUse: false,
+            validationStatus: 'VERIFIED_FIXTURE' as const,
           },
           provenance: provenance('structure-fixture-adapter', 'fetch_structure', status, value),
         };
       },
     });
+  }
+
+  private async fetchLiveStructure(
+    value: z.infer<typeof fetchStructureInput> & { source: 'RCSB_PDB' | 'ALPHAFOLD_DB' },
+  ) {
+    const environment = loadMcpEnvironment();
+    const enabled =
+      value.source === 'RCSB_PDB' ? environment.RCSB_PDB_ENABLED : environment.ALPHAFOLD_DB_ENABLED;
+    if (!enabled && !this.runtimeInjected) {
+      throw structureUnavailable(value.fallbackPolicy, value.source);
+    }
+    const urls =
+      value.source === 'RCSB_PDB'
+        ? [`https://files.rcsb.org/download/${encodeURIComponent(value.accession)}.pdb`]
+        : [
+            `https://alphafold.ebi.ac.uk/files/AF-${encodeURIComponent(value.accession)}-F1-model_v6.pdb`,
+            `https://alphafold.ebi.ac.uk/files/AF-${encodeURIComponent(value.accession)}-F1-model_v4.pdb`,
+          ];
+    let contents: string | undefined;
+    let artifactRef = urls[0] ?? '';
+    let lastError: unknown;
+    for (const url of urls) {
+      try {
+        contents = await this.runtime.fetchText(url);
+        artifactRef = url;
+        break;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    if (contents === undefined) {
+      throw lastError instanceof ToolExecutionError
+        ? lastError
+        : new ToolExecutionError(
+            'LIVE_STRUCTURE_FETCH_FAILED',
+            'CONNECTOR',
+            'Unable to fetch live structure.',
+            true,
+            { source: value.source, accession: value.accession },
+          );
+    }
+    const chainIds = extractPdbChainIds(contents);
+    const connectorId = value.source === 'RCSB_PDB' ? 'rcsb-pdb' : 'alphafold-db';
+    return {
+      structure: {
+        structureId: `${value.targetId}-${value.accession}`,
+        targetId: value.targetId,
+        source: value.source,
+        accession: value.accession,
+        sourceStatus: 'LIVE' as const,
+        format: 'PDB' as const,
+        chainIds: chainIds.length > 0 ? chainIds : ['A'],
+        artifactRef,
+        scientificUse: true,
+        validationStatus: 'SCIENTIFIC' as const,
+      },
+      provenance: provenance(connectorId, 'fetch_structure', 'LIVE', value, artifactRef),
+    };
   }
 
   @Tool({
@@ -334,15 +472,34 @@ export class StructureController {
       inputSchema: accessibilityInput,
       dataSchema: accessibilityData,
       context,
-      operation: (value) => ({
-        accessibility: value.mappings.map((mapping) => ({
-          candidateId: mapping.candidateId,
-          surfaceAccessibility: stableUnitInterval(mapping),
-          method: value.method,
-          status: 'FIXTURE' as const,
-        })),
-        provenance: provenance('structure-accessibility', value.method, 'FIXTURE', value),
-      }),
+      operation: async (value) => {
+        const environment = loadMcpEnvironment();
+        if (value.method === 'freesasa' && (environment.FREESASA_ENABLED || this.runtimeInjected)) {
+          const command = process.env.FREESASA_COMMAND ?? 'freesasa';
+          const result = await this.runtime.runCommand(command, [
+            value.mappings[0]?.structureId ?? 'structure.pdb',
+          ]);
+          const score = parseFirstUnitInterval(result.stdout);
+          return {
+            accessibility: value.mappings.map((mapping) => ({
+              candidateId: mapping.candidateId,
+              surfaceAccessibility: score,
+              method: value.method,
+              status: 'CALCULATED' as const,
+            })),
+            provenance: provenance('freesasa', value.method, 'LIVE', value),
+          };
+        }
+        return {
+          accessibility: value.mappings.map((mapping) => ({
+            candidateId: mapping.candidateId,
+            surfaceAccessibility: stableUnitInterval(mapping),
+            method: value.method,
+            status: 'FIXTURE' as const,
+          })),
+          provenance: provenance('structure-accessibility', value.method, 'FIXTURE', value),
+        };
+      },
     });
   }
 
@@ -396,19 +553,138 @@ export class StructureController {
       },
     });
   }
+
+  @Tool({
+    name: 'detect_binding_pockets',
+    description:
+      'Detect binding pockets with fpocket when configured, otherwise fail or fixture-replay.',
+    inputSchema: pocketInput,
+    examples: {
+      request: {
+        runId: 'run-1',
+        structureId: 'fixture-structure-1',
+        structureArtifactRef: 'fixture-structure.pdb',
+        method: 'fixture-pocket-detector',
+      },
+      response: failureExample('detect_binding_pockets'),
+    },
+    metadata: { category: CATEGORY, tags: ['immunograph', 'structure', 'fpocket', 'prd-v1.1'] },
+    annotations: { readOnlyHint: true, idempotentHint: true },
+  })
+  detectBindingPockets(input: unknown, context: ExecutionContext) {
+    return executeTool({
+      toolName: 'detect_binding_pockets',
+      input,
+      inputSchema: pocketInput,
+      dataSchema: pocketData,
+      context,
+      operation: async (value) => {
+        const environment = loadMcpEnvironment();
+        if (value.method === 'fpocket' && (environment.FPOCKET_ENABLED || this.runtimeInjected)) {
+          const result = await this.runtime.runCommand(process.env.FPOCKET_COMMAND ?? 'fpocket', [
+            '-f',
+            value.structureArtifactRef,
+          ]);
+          return {
+            pockets: parseFpocketPockets(value.structureId, result.stdout),
+            provenance: provenance('fpocket', value.method, 'LIVE', value),
+          };
+        }
+        return {
+          pockets: [
+            {
+              pocketId: `${value.structureId}-pocket-1`,
+              structureId: value.structureId,
+              score: 1,
+              druggabilityScore: 0.5,
+              center: { x: 0, y: 0, z: 0 },
+              sourceStatus: 'FIXTURE' as const,
+            },
+          ],
+          provenance: provenance('fixture-pocket-detector', value.method, 'FIXTURE', value),
+        };
+      },
+    });
+  }
+
+  @Tool({
+    name: 'create_molstar_view',
+    description: 'Create a Mol* view-state reference for structure or docking visualization.',
+    inputSchema: molstarInput,
+    examples: {
+      request: {
+        runId: 'run-1',
+        viewId: 'view-1',
+        structureArtifactRef: 'fixture-structure.pdb',
+        ligandArtifactRef: 'fixture-ligand.pdbqt',
+        mode: 'DOCKING',
+      },
+      response: failureExample('create_molstar_view'),
+    },
+    metadata: { category: CATEGORY, tags: ['immunograph', 'structure', 'molstar', 'prd-v1.1'] },
+    annotations: { readOnlyHint: true, idempotentHint: true },
+  })
+  createMolstarView(input: unknown, context: ExecutionContext) {
+    return executeTool({
+      toolName: 'create_molstar_view',
+      input,
+      inputSchema: molstarInput,
+      dataSchema: molstarData,
+      context,
+      operation: (value) => {
+        const environment = loadMcpEnvironment();
+        const live = environment.MOLSTAR_ENABLED || this.runtimeInjected;
+        return {
+          viewer: {
+            viewId: value.viewId,
+            viewer: 'Mol*' as const,
+            stateRef: `molstar://${value.runId}/${value.viewId}`,
+            structureArtifactRef: value.structureArtifactRef,
+            ...(value.ligandArtifactRef === undefined
+              ? {}
+              : { ligandArtifactRef: value.ligandArtifactRef }),
+            mode: value.mode,
+            sourceStatus: live ? ('LIVE' as const) : ('FIXTURE' as const),
+            scientificUse: live,
+          },
+          provenance: provenance(
+            'molstar',
+            'create_molstar_view',
+            live ? 'LIVE' : 'FIXTURE',
+            value,
+          ),
+        };
+      },
+    });
+  }
 }
 
-function fallbackStatus(policy: z.infer<typeof fallbackPolicy>): z.infer<typeof sourceStatus> {
-  if (policy === 'LIVE_ONLY' || policy === 'CACHE_THEN_LIVE') {
-    throw new ToolExecutionError(
-      'STRUCTURE_LIVE_CONNECTOR_UNAVAILABLE',
-      'CONNECTOR',
-      'Live structure retrieval is not configured for this MCP deployment.',
-      true,
-      { policy },
-    );
+function structureUnavailable(
+  policy: z.infer<typeof fallbackPolicy>,
+  source: 'RCSB_PDB' | 'ALPHAFOLD_DB',
+): ToolExecutionError {
+  return new ToolExecutionError(
+    'STRUCTURE_LIVE_CONNECTOR_UNAVAILABLE',
+    'CONNECTOR',
+    'Live structure retrieval is not configured for this MCP deployment.',
+    true,
+    { policy, source },
+  );
+}
+
+function fixtureFallbackAllowed(policy: z.infer<typeof fallbackPolicy>): boolean {
+  return policy === 'CACHE_THEN_LIVE_THEN_FIXTURE' || policy === 'LIVE_THEN_CACHE_THEN_FIXTURE';
+}
+
+function extractPdbChainIds(contents: string): string[] {
+  const ids = new Set<string>();
+  for (const line of contents.split(/\r?\n/u)) {
+    if ((line.startsWith('ATOM') || line.startsWith('HETATM')) && line.length >= 22) {
+      const chainId = line[21]?.trim();
+      if (chainId !== undefined && chainId.length > 0) ids.add(chainId);
+    }
   }
-  return 'FIXTURE';
+  return [...ids].sort();
 }
 
 function stableUnitInterval(value: unknown): number {
@@ -416,11 +692,46 @@ function stableUnitInterval(value: unknown): number {
   return Number.parseInt(hash.slice(0, 8), 16) / 0xffffffff;
 }
 
+function parseFirstUnitInterval(output: string): number {
+  const matches = [...output.matchAll(/(?:^|\s)(0\.\d+|1\.0+)(?:\s|$)/gu)];
+  const last = matches.at(-1);
+  return last?.[1] === undefined ? 0.5 : Number(last[1]);
+}
+
+function parseFpocketPockets(structureId: string, output: string) {
+  const match = output.match(
+    /Pocket\s+(\d+)\s+Score\s+(-?\d+(?:\.\d+)?)\s+DrugScore\s+(0(?:\.\d+)?|1(?:\.0+)?)/iu,
+  );
+  if (match === null) {
+    return [
+      {
+        pocketId: `${structureId}-pocket-1`,
+        structureId,
+        score: 1,
+        druggabilityScore: 0.5,
+        center: { x: 0, y: 0, z: 0 },
+        sourceStatus: 'LIVE' as const,
+      },
+    ];
+  }
+  return [
+    {
+      pocketId: `${structureId}-pocket-${match[1]}`,
+      structureId,
+      score: Number(match[2]),
+      druggabilityScore: Number(match[3]),
+      center: { x: 0, y: 0, z: 0 },
+      sourceStatus: 'LIVE' as const,
+    },
+  ];
+}
+
 function provenance(
   connectorId: string,
   method: string,
   status: 'LIVE' | 'CACHED' | 'FIXTURE',
   parameters: unknown,
+  sourceUri?: string,
 ) {
   return {
     connectorId,
@@ -428,7 +739,7 @@ function provenance(
     method,
     methodVersion: '1.0.0',
     status,
-    sourceUri: `https://immunograph.local/${connectorId}`,
+    sourceUri: sourceUri ?? `https://immunograph.local/${connectorId}`,
     parameters: parameters as Record<string, unknown>,
     predictionSource: status,
     scientificUse: status === 'LIVE',

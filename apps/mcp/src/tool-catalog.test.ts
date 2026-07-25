@@ -8,7 +8,10 @@ import type { z } from 'zod';
 
 import type { CapabilityPort } from './common/capability-port.js';
 import { AppModule } from './app.module.js';
+import { ChemistryController } from './chemistry/chemistry.controller.js';
+import { DockingController } from './docking/docking.controller.js';
 import { PredictionController } from './prediction/prediction.controller.js';
+import { StructureController } from './structure/structure.controller.js';
 import { TOOL_GROUPS } from './tool-catalog.js';
 
 const EXPECTED_TOOL_NAMES = [
@@ -24,8 +27,10 @@ const EXPECTED_TOOL_NAMES = [
   'cluster_docking_poses',
   'compute_consensus',
   'compute_consensus_batch',
+  'create_molstar_view',
   'deduplicate_compounds',
   'describe_agentic_workflow',
+  'detect_binding_pockets',
   'detect_overlapping_epitopes',
   'explain_candidate',
   'export_candidates',
@@ -585,6 +590,373 @@ describe('MCP tool catalog', () => {
     ).resolves.toMatchObject({
       ok: false,
       error: { code: 'DOCKING_RUNTIME_UNAVAILABLE', category: 'CONNECTOR' },
+    });
+  });
+
+  it('executes real live-capable structure, chemistry, and docking adapters when HTTP and CLI runtimes are available', async () => {
+    const structureCommandCalls: Array<{ command: string; args: string[] }> = [];
+    const structureController = (
+      new StructureController() as unknown as {
+        useRuntime(runtime: {
+          fetchText(url: string): Promise<string>;
+          fetchJson(url: string): Promise<unknown>;
+          runCommand(command: string, args: string[]): Promise<{ stdout: string; stderr: string }>;
+        }): StructureController;
+      }
+    ).useRuntime({
+      fetchText: async (url) => {
+        expect(url).toBe('https://files.rcsb.org/download/1ABC.pdb');
+        return [
+          'HEADER    TEST STRUCTURE',
+          'ATOM      1  N   GLY A   1       0.000   0.000   0.000  1.00 10.00           N',
+          'ATOM      2  CA  GLY A   1       1.000   0.000   0.000  1.00 10.00           C',
+          'END',
+        ].join('\n');
+      },
+      fetchJson: async () => ({}),
+      runCommand: async (command, args) => {
+        structureCommandCalls.push({ command, args });
+        return {
+          stdout: command === 'freesasa' ? '1 A 1 0.42' : 'Pocket 1 Score 12.5 DrugScore 0.61',
+          stderr: '',
+        };
+      },
+    });
+    const structureTools = buildTools(structureController as unknown as Record<string, unknown>);
+    const structureTool = structureTools.find((tool) => tool.name === 'fetch_structure');
+    const structure = await structureTool?.execute(
+      {
+        runId: 'run-1',
+        targetId: 'target-1',
+        source: 'RCSB_PDB',
+        accession: '1ABC',
+        fallbackPolicy: 'LIVE_ONLY',
+      },
+      createContext(),
+    );
+    expect(structure).toMatchObject({
+      ok: true,
+      data: {
+        structure: {
+          sourceStatus: 'LIVE',
+          format: 'PDB',
+          scientificUse: true,
+        },
+        provenance: {
+          connectorId: 'rcsb-pdb',
+          status: 'LIVE',
+          scientificUse: true,
+        },
+      },
+    });
+
+    const alphafoldUrls: string[] = [];
+    const alphafoldController = new StructureController().useRuntime({
+      fetchText: async (url) => {
+        alphafoldUrls.push(url);
+        if (url.endsWith('model_v6.pdb')) {
+          throw new Error('not found');
+        }
+        return [
+          'HEADER    ALPHAFOLD TEST STRUCTURE',
+          'ATOM      1  N   GLY A   1       0.000   0.000   0.000  1.00 10.00           N',
+          'END',
+        ].join('\n');
+      },
+      fetchJson: async () => ({}),
+      runCommand: async () => ({ stdout: '', stderr: '' }),
+    });
+    const alphafoldTool = buildTools(
+      alphafoldController as unknown as Record<string, unknown>,
+    ).find((tool) => tool.name === 'fetch_structure');
+    const alphafoldStructure = await alphafoldTool?.execute(
+      {
+        runId: 'run-1',
+        targetId: 'target-1',
+        source: 'ALPHAFOLD_DB',
+        accession: 'P69905',
+        fallbackPolicy: 'LIVE_ONLY',
+      },
+      createContext(),
+    );
+    expect(alphafoldUrls).toEqual([
+      'https://alphafold.ebi.ac.uk/files/AF-P69905-F1-model_v6.pdb',
+      'https://alphafold.ebi.ac.uk/files/AF-P69905-F1-model_v4.pdb',
+    ]);
+    expect(alphafoldStructure).toMatchObject({
+      ok: true,
+      data: {
+        structure: { sourceStatus: 'LIVE', artifactRef: alphafoldUrls[1] },
+        provenance: { connectorId: 'alphafold-db', status: 'LIVE' },
+      },
+    });
+
+    const accessibility = await structureTools
+      .find((tool) => tool.name === 'calculate_surface_accessibility')
+      ?.execute(
+        {
+          runId: 'run-1',
+          method: 'freesasa',
+          mappings: [
+            {
+              candidateId: 'candidate-1',
+              structureId: '1ABC',
+              chainId: 'A',
+              start: 1,
+              end: 9,
+            },
+          ],
+        },
+        createContext(),
+      );
+    expect(structureCommandCalls.some((call) => call.command === 'freesasa')).toBe(true);
+    expect(accessibility).toMatchObject({
+      ok: true,
+      data: {
+        accessibility: [{ status: 'CALCULATED', surfaceAccessibility: 0.42 }],
+        provenance: { connectorId: 'freesasa', status: 'LIVE', scientificUse: true },
+      },
+    });
+
+    const pockets = await structureTools
+      .find((tool) => tool.name === 'detect_binding_pockets')
+      ?.execute(
+        {
+          runId: 'run-1',
+          structureId: '1ABC',
+          structureArtifactRef: '1ABC.pdb',
+          method: 'fpocket',
+        },
+        createContext(),
+      );
+    expect(structureCommandCalls.some((call) => call.command === 'fpocket')).toBe(true);
+    expect(pockets).toMatchObject({
+      ok: true,
+      data: {
+        pockets: [{ pocketId: '1ABC-pocket-1', score: 12.5, druggabilityScore: 0.61 }],
+        provenance: { connectorId: 'fpocket', status: 'LIVE', scientificUse: true },
+      },
+    });
+
+    const molstar = await structureTools
+      .find((tool) => tool.name === 'create_molstar_view')
+      ?.execute(
+        {
+          runId: 'run-1',
+          viewId: 'view-1',
+          structureArtifactRef: '1ABC.pdb',
+          ligandArtifactRef: 'ligand.pdbqt',
+          mode: 'DOCKING',
+        },
+        createContext(),
+      );
+    expect(molstar).toMatchObject({
+      ok: true,
+      data: {
+        viewer: {
+          viewer: 'Mol*',
+          sourceStatus: 'LIVE',
+          scientificUse: true,
+        },
+        provenance: { connectorId: 'molstar', status: 'LIVE', scientificUse: true },
+      },
+    });
+
+    const chemistryCommandCalls: Array<{ command: string; args: string[] }> = [];
+    const chemistryController = (
+      new ChemistryController() as unknown as {
+        useRuntime(runtime: {
+          fetchText(url: string): Promise<string>;
+          fetchJson(url: string): Promise<unknown>;
+          runCommand(command: string, args: string[]): Promise<{ stdout: string; stderr: string }>;
+        }): ChemistryController;
+      }
+    ).useRuntime({
+      fetchText: async () => '',
+      fetchJson: async (url) => {
+        expect(url).toContain('/rest/pug/compound/cid/2244/property/');
+        return {
+          PropertyTable: {
+            Properties: [
+              { CID: 2244, Title: 'Aspirin', IsomericSMILES: 'CC(=O)OC1=CC=CC=C1C(=O)O' },
+            ],
+          },
+        };
+      },
+      runCommand: async (command, args) => {
+        chemistryCommandCalls.push({ command, args });
+        return {
+          stdout:
+            command === 'python'
+              ? '{"heavyAtomCount":13,"heteroAtomCount":4,"aromaticRingEstimate":1,"rotatableBondEstimate":3}'
+              : 'PDBQT ligand',
+          stderr: '',
+        };
+      },
+    });
+    const chemistryTools = buildTools(chemistryController as unknown as Record<string, unknown>);
+    const compoundTool = chemistryTools.find((tool) => tool.name === 'fetch_compound');
+    const compound = await compoundTool?.execute(
+      {
+        runId: 'run-1',
+        compoundRef: '2244',
+        source: 'PUBCHEM',
+        fallbackPolicy: 'LIVE_ONLY',
+      },
+      createContext(),
+    );
+    expect(compound).toMatchObject({
+      ok: true,
+      data: {
+        compound: {
+          sourceStatus: 'LIVE',
+          name: 'Aspirin',
+          smiles: 'CC(=O)OC1=CC=CC=C1C(=O)O',
+          scientificUse: true,
+        },
+        provenance: {
+          connectorId: 'pubchem',
+          status: 'LIVE',
+          scientificUse: true,
+        },
+      },
+    });
+
+    const descriptors = await chemistryTools
+      .find((tool) => tool.name === 'calculate_molecular_descriptors')
+      ?.execute(
+        {
+          runId: 'run-1',
+          compoundId: '2244',
+          smiles: 'CC(=O)OC1=CC=CC=C1C(=O)O',
+          method: 'rdkit',
+        },
+        createContext(),
+      );
+    expect(chemistryCommandCalls.some((call) => call.command === 'python')).toBe(true);
+    expect(descriptors).toMatchObject({
+      ok: true,
+      data: {
+        descriptors: { heavyAtomCount: 13, heteroAtomCount: 4 },
+        provenance: { connectorId: 'rdkit', status: 'LIVE', scientificUse: true },
+      },
+    });
+
+    const ligand = await chemistryTools
+      .find((tool) => tool.name === 'prepare_ligand')
+      ?.execute(
+        {
+          runId: 'run-1',
+          compoundId: '2244',
+          smiles: 'CC(=O)OC1=CC=CC=C1C(=O)O',
+          preparationMethod: 'openbabel-pdbqt',
+        },
+        createContext(),
+      );
+    expect(chemistryCommandCalls.some((call) => call.command === 'obabel')).toBe(true);
+    expect(ligand).toMatchObject({
+      ok: true,
+      data: {
+        ligandId: '2244-ligand',
+        format: 'PDBQT',
+        sourceStatus: 'LIVE',
+        scientificUse: true,
+        provenance: { connectorId: 'open-babel', status: 'LIVE', scientificUse: true },
+      },
+    });
+
+    const commandCalls: Array<{ command: string; args: string[] }> = [];
+    const dockingController = (
+      new DockingController() as unknown as {
+        useRuntime(runtime: {
+          fetchText(url: string): Promise<string>;
+          fetchJson(url: string): Promise<unknown>;
+          runCommand(command: string, args: string[]): Promise<{ stdout: string; stderr: string }>;
+        }): DockingController;
+      }
+    ).useRuntime({
+      fetchText: async () => '',
+      fetchJson: async () => ({}),
+      runCommand: async (command, args) => {
+        commandCalls.push({ command, args });
+        return {
+          stdout: [
+            '-----+------------+----------+----------',
+            '   1       -7.4      0.000      0.000',
+            '   2       -6.9      1.200      2.100',
+          ].join('\n'),
+          stderr: '',
+        };
+      },
+    });
+    const dockingTools = buildTools(dockingController as unknown as Record<string, unknown>);
+    const receptor = await dockingTools
+      .find((tool) => tool.name === 'prepare_receptor')
+      ?.execute(
+        {
+          runId: 'run-1',
+          structureId: '1ABC.pdb',
+          chainIds: ['A'],
+          preparationMethod: 'openbabel-receptor-pdbqt',
+        },
+        createContext(),
+      );
+    expect(commandCalls.some((call) => call.command === 'obabel')).toBe(true);
+    expect(receptor).toMatchObject({
+      ok: true,
+      data: { format: 'PDBQT', sourceStatus: 'LIVE', scientificUse: true },
+    });
+
+    const dockingTool = dockingTools.find((tool) => tool.name === 'run_docking');
+    const docking = await dockingTool?.execute(
+      {
+        runId: 'run-1',
+        receptorId: 'receptor.pdbqt',
+        ligandId: 'ligand.pdbqt',
+        dockingBoxId: 'box-1',
+        mode: 'VINA',
+        fallbackPolicy: 'LIVE_ONLY',
+      },
+      createContext(),
+    );
+    expect(commandCalls.some((call) => call.command === 'vina')).toBe(true);
+    expect(docking).toMatchObject({
+      ok: true,
+      data: {
+        dockingRun: {
+          sourceStatus: 'LIVE',
+          scientificUse: true,
+        },
+        poses: [
+          { rank: 1, affinityKcalMol: -7.4, rmsdLowerBound: 0, rmsdUpperBound: 0 },
+          { rank: 2, affinityKcalMol: -6.9, rmsdLowerBound: 1.2, rmsdUpperBound: 2.1 },
+        ],
+        provenance: {
+          connectorId: 'autodock-vina',
+          status: 'LIVE',
+          scientificUse: true,
+        },
+      },
+    });
+
+    const interactions = await dockingTools
+      .find((tool) => tool.name === 'extract_interactions')
+      ?.execute(
+        {
+          runId: 'run-1',
+          dockingRunId: 'receptor.pdbqt-ligand.pdbqt-box-1',
+          representativePoseIds: ['receptor.pdbqt-ligand.pdbqt-box-1-pose-1'],
+          method: 'plip',
+        },
+        createContext(),
+      );
+    expect(commandCalls.some((call) => call.command === 'plip')).toBe(true);
+    expect(interactions).toMatchObject({
+      ok: true,
+      data: {
+        interactions: [{ interactionType: 'HYDROGEN_BOND' }],
+        provenance: { connectorId: 'plip', status: 'LIVE', scientificUse: true },
+      },
     });
   });
 

@@ -15,7 +15,7 @@ This checklist mirrors [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md). Check a
 - `npm run connectors:check:mhcflurry`: passed against the local `.venv-mhcflurry` install.
 - `npm run connectors:check:iedb-population`: passed against the local IEDB official standalone population-coverage package.
 
-Implementation status summary: the offline fixture/synthetic path, REST API, MCP tools, MCP-visible PRD v1.1 agentic workflow descriptor, bounded LangGraph agent workflow, database repositories, core algorithms, project dashboard, workflow graph, evidence graph, candidate review, shortlist approval, diagnostics, JSON/CSV report artifacts, mandatory research-package ZIP export with checksums, evidence-graph/workflow-trace artifact exports, fixture-labeled docking PDBQT/JSON/PNG package artifacts, API liveness probe, API-owned `LIVE -> CACHED` reuse, IEDB MHC-I/MHC-II live adapters, optional local MHCflurry MHC-I adapter, official IEDB standalone population-coverage adapter, mixed-method hybrid routing, and mandatory fixture-safe structure/chemistry/docking MCP tool groups are implemented. Public deployment hardening, full browser/E2E rehearsal, and production live structure/chemistry/docking runtime adapters remain incomplete.
+Implementation status summary: the offline fixture/synthetic path, REST API, MCP tools, MCP-visible PRD v1.1 agentic workflow descriptor, bounded LangGraph agent workflow, database repositories, core algorithms, project dashboard, workflow graph, evidence graph, candidate review, shortlist approval, diagnostics, JSON/CSV report artifacts, mandatory research-package ZIP export with checksums, evidence-graph/workflow-trace artifact exports, fixture-labeled docking PDBQT/JSON/PNG package artifacts, API liveness probe, API-owned `LIVE -> CACHED` reuse, IEDB MHC-I/MHC-II live adapters, optional local MHCflurry MHC-I adapter, official IEDB standalone population-coverage adapter, mixed-method hybrid routing, and live-capable RCSB/AlphaFold/PubChem/Open Babel/RDKit/Vina/PLIP/fpocket/FreeSASA/Mol* MCP adapters are implemented. Public deployment hardening and full browser/E2E rehearsal remain incomplete.
 
 ## Phase 0 — Foundation
 
@@ -101,9 +101,9 @@ live cache, and never be presented as provider-produced, experimental, clinical,
 - [x] Implement Evidence tool contracts in `immunograph-mcp`; external coverage execution remains behind a capability port.
 - [x] Implement Constraint tools in `immunograph-mcp` using shared deterministic algorithms.
 - [x] Implement Report tool contracts in `immunograph-mcp`; artifact I/O remains behind a capability port.
-- [x] Implement Structure tools: fetch, validate, epitope mapping, surface accessibility, and confidence.
-- [x] Implement Chemistry tools: fetch, validate, deduplicate, descriptors, and ligand preparation.
-- [x] Implement Docking tools: receptor preparation, docking-box validation, docking replay, pose clustering, and interaction extraction.
+- [x] Implement Structure tools: RCSB/AlphaFold fetch, validate, epitope mapping, FreeSASA accessibility, confidence, fpocket pockets, and Mol* view-state.
+- [x] Implement Chemistry tools: PubChem fetch, validate, deduplicate, RDKit descriptors, and Open Babel ligand preparation.
+- [x] Implement Docking tools: Open Babel receptor preparation, docking-box validation, AutoDock Vina execution, pose clustering, PLIP interaction extraction, and Mol* view-state.
 - [x] Register all seven capability modules in one NitroStack server process.
 - [x] Add common tool envelopes, deterministic hashes, structured logging, and error mapping.
 - [x] Add task progress/cancellation checks to tool execution, including long prediction tools.
@@ -165,9 +165,10 @@ live cache, and never be presented as provider-produced, experimental, clinical,
 - [x] Add parser samples and tests.
 - [x] Verify `LIVE -> CACHED` behavior.
 - [x] Verify each fallback reason and status display.
-- [ ] Implement production live structure retrieval adapter.
-- [ ] Implement production live chemistry adapter.
-- [ ] Implement production live docking/Vina runtime adapter.
+- [x] Implement production live structure retrieval adapters for RCSB PDB and AlphaFold DB.
+- [x] Implement production live chemistry adapters for PubChem, Open Babel, and RDKit.
+- [x] Implement production live docking adapters for AutoDock Vina, PLIP, fpocket, FreeSASA, and Mol* view-state.
+- [ ] Verify Docker image build with NitroStack Cloud runtime once Docker Desktop or cloud builder is available.
 
 ## Phase 7 — UI
 

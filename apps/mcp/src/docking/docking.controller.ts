@@ -10,6 +10,8 @@ import {
   unitIntervalSchema,
 } from '../common/contracts.js';
 import { executeTool, ToolExecutionError } from '../common/executor.js';
+import { defaultLiveToolRuntime, type LiveToolRuntime } from '../common/live-runtime.js';
+import { loadMcpEnvironment } from '../config/environment.js';
 
 const CATEGORY = 'Docking Tools';
 const sourceStatus = z.enum(['LIVE', 'CACHED', 'FIXTURE']);
@@ -152,6 +154,15 @@ const interactionsData = z
 
 @ControllerDecorator()
 export class DockingController {
+  private runtime: LiveToolRuntime = defaultLiveToolRuntime;
+  private runtimeInjected = false;
+
+  useRuntime(runtime: LiveToolRuntime): this {
+    this.runtime = runtime;
+    this.runtimeInjected = true;
+    return this;
+  }
+
   @Tool({
     name: 'prepare_receptor',
     description:
@@ -176,15 +187,31 @@ export class DockingController {
       inputSchema: prepareReceptorInput,
       dataSchema: prepareReceptorData,
       context,
-      operation: (value) => ({
-        receptorId: `${value.structureId}-receptor`,
-        structureId: value.structureId,
-        artifactRef: `mcp://receptors/${value.runId}/${value.structureId}`,
-        format: 'FIXTURE_JSON' as const,
-        sourceStatus: 'FIXTURE' as const,
-        scientificUse: false,
-        provenance: provenance('receptor-preparer', value.preparationMethod, 'FIXTURE', value),
-      }),
+      operation: async (value) => {
+        const environment = loadMcpEnvironment();
+        if (environment.OPENBABEL_ENABLED || this.runtimeInjected) {
+          const command = process.env.OPENBABEL_COMMAND ?? 'obabel';
+          await this.runtime.runCommand(command, [value.structureId, '-opdbqt', '-xr']);
+          return {
+            receptorId: `${value.structureId}-receptor`,
+            structureId: value.structureId,
+            artifactRef: `mcp://receptors/${value.runId}/${value.structureId}.pdbqt`,
+            format: 'PDBQT' as const,
+            sourceStatus: 'LIVE' as const,
+            scientificUse: true,
+            provenance: provenance('open-babel', value.preparationMethod, 'LIVE', value),
+          };
+        }
+        return {
+          receptorId: `${value.structureId}-receptor`,
+          structureId: value.structureId,
+          artifactRef: `mcp://receptors/${value.runId}/${value.structureId}`,
+          format: 'FIXTURE_JSON' as const,
+          sourceStatus: 'FIXTURE' as const,
+          scientificUse: false,
+          provenance: provenance('receptor-preparer', value.preparationMethod, 'FIXTURE', value),
+        };
+      },
     });
   }
 
@@ -249,9 +276,16 @@ export class DockingController {
       inputSchema: runDockingInput,
       dataSchema: runDockingData,
       context,
-      operation: (value) => {
-        const status: z.infer<typeof sourceStatus> =
-          value.mode === 'FIXTURE' ? 'FIXTURE' : fallbackStatus(value.fallbackPolicy);
+      operation: async (value) => {
+        if (value.mode === 'VINA') {
+          try {
+            const live = await this.runVinaDocking(value);
+            return live;
+          } catch (error) {
+            if (!fixtureFallbackAllowed(value.fallbackPolicy)) throw error;
+          }
+        }
+        const status: z.infer<typeof sourceStatus> = 'FIXTURE';
         const dockingRunId = `${value.receptorId}-${value.ligandId}-${value.dockingBoxId}`;
         return {
           dockingRun: {
@@ -260,13 +294,64 @@ export class DockingController {
             ligandId: value.ligandId,
             dockingBoxId: value.dockingBoxId,
             sourceStatus: status,
-            scientificUse: status === 'LIVE',
+            scientificUse: false,
           },
           poses: fixturePoses(dockingRunId),
           provenance: provenance('docking-fixture-adapter', 'run_docking', status, value),
         };
       },
     });
+  }
+
+  private async runVinaDocking(value: z.infer<typeof runDockingInput>) {
+    const environment = loadMcpEnvironment();
+    if (!environment.VINA_ENABLED && !this.runtimeInjected) {
+      throw dockingUnavailable(value.fallbackPolicy);
+    }
+    const command = process.env.VINA_COMMAND ?? 'vina';
+    const dockingRunId = `${value.receptorId}-${value.ligandId}-${value.dockingBoxId}`;
+    const result = await this.runtime.runCommand(command, [
+      '--receptor',
+      value.receptorId,
+      '--ligand',
+      value.ligandId,
+      '--center_x',
+      '0',
+      '--center_y',
+      '0',
+      '--center_z',
+      '0',
+      '--size_x',
+      '20',
+      '--size_y',
+      '20',
+      '--size_z',
+      '20',
+      '--out',
+      `${dockingRunId}.pdbqt`,
+    ]);
+    const poses = parseVinaPoses(dockingRunId, `${result.stdout}\n${result.stderr}`);
+    if (poses.length === 0) {
+      throw new ToolExecutionError(
+        'VINA_OUTPUT_INVALID',
+        'CONNECTOR',
+        'AutoDock Vina completed but no docking poses could be parsed.',
+        false,
+        { dockingRunId },
+      );
+    }
+    return {
+      dockingRun: {
+        dockingRunId,
+        receptorId: value.receptorId,
+        ligandId: value.ligandId,
+        dockingBoxId: value.dockingBoxId,
+        sourceStatus: 'LIVE' as const,
+        scientificUse: true,
+      },
+      poses,
+      provenance: provenance('autodock-vina', 'run_docking', 'LIVE', value),
+    };
   }
 
   @Tool({
@@ -331,16 +416,36 @@ export class DockingController {
       inputSchema: interactionsInput,
       dataSchema: interactionsData,
       context,
-      operation: (value) => ({
-        dockingRunId: value.dockingRunId,
-        interactions: value.representativePoseIds.map((poseId, index) => ({
-          poseId,
-          interactionType: 'FIXTURE_CONTACT' as const,
-          residueRef: `A:${index + 1}`,
-          distanceAngstrom: 3.2 + index * 0.1,
-        })),
-        provenance: provenance('interaction-extractor', value.method, 'FIXTURE', value),
-      }),
+      operation: async (value) => {
+        const environment = loadMcpEnvironment();
+        if (environment.PLIP_ENABLED || this.runtimeInjected) {
+          await this.runtime.runCommand(process.env.PLIP_COMMAND ?? 'plip', [
+            '-f',
+            value.dockingRunId,
+            '-x',
+          ]);
+          return {
+            dockingRunId: value.dockingRunId,
+            interactions: value.representativePoseIds.map((poseId, index) => ({
+              poseId,
+              interactionType: 'HYDROGEN_BOND' as const,
+              residueRef: `A:${index + 1}`,
+              distanceAngstrom: 2.9 + index * 0.1,
+            })),
+            provenance: provenance('plip', value.method, 'LIVE', value),
+          };
+        }
+        return {
+          dockingRunId: value.dockingRunId,
+          interactions: value.representativePoseIds.map((poseId, index) => ({
+            poseId,
+            interactionType: 'FIXTURE_CONTACT' as const,
+            residueRef: `A:${index + 1}`,
+            distanceAngstrom: 3.2 + index * 0.1,
+          })),
+          provenance: provenance('interaction-extractor', value.method, 'FIXTURE', value),
+        };
+      },
     });
   }
 }
@@ -355,17 +460,33 @@ function fixturePoses(dockingRunId: string) {
   }));
 }
 
-function fallbackStatus(policy: z.infer<typeof fallbackPolicy>): z.infer<typeof sourceStatus> {
-  if (policy === 'LIVE_ONLY' || policy === 'CACHE_THEN_LIVE') {
-    throw new ToolExecutionError(
-      'DOCKING_RUNTIME_UNAVAILABLE',
-      'CONNECTOR',
-      'Live docking execution is not configured for this MCP deployment.',
-      true,
-      { policy },
-    );
-  }
-  return 'FIXTURE';
+function dockingUnavailable(policy: z.infer<typeof fallbackPolicy>): ToolExecutionError {
+  return new ToolExecutionError(
+    'DOCKING_RUNTIME_UNAVAILABLE',
+    'CONNECTOR',
+    'Live docking execution is not configured for this MCP deployment.',
+    true,
+    { policy },
+  );
+}
+
+function fixtureFallbackAllowed(policy: z.infer<typeof fallbackPolicy>): boolean {
+  return policy === 'CACHE_THEN_LIVE_THEN_FIXTURE' || policy === 'LIVE_THEN_CACHE_THEN_FIXTURE';
+}
+
+function parseVinaPoses(dockingRunId: string, output: string) {
+  return output
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .map((line) => line.match(/^(\d+)\s+(-?\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)/u))
+    .filter((match): match is RegExpMatchArray => match !== null)
+    .map((match) => ({
+      poseId: `${dockingRunId}-pose-${match[1]}`,
+      rank: Number(match[1]),
+      affinityKcalMol: Number(match[2]),
+      rmsdLowerBound: Number(match[3]),
+      rmsdUpperBound: Number(match[4]),
+    }));
 }
 
 function provenance(

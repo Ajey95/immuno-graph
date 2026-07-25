@@ -9,6 +9,8 @@ import {
   identifierSchema,
 } from '../common/contracts.js';
 import { executeTool, ToolExecutionError } from '../common/executor.js';
+import { defaultLiveToolRuntime, type LiveToolRuntime } from '../common/live-runtime.js';
+import { loadMcpEnvironment } from '../config/environment.js';
 
 const CATEGORY = 'Chemistry Tools';
 const sourceStatus = z.enum(['LIVE', 'CACHED', 'FIXTURE']);
@@ -147,6 +149,15 @@ const prepareLigandData = z
 
 @ControllerDecorator()
 export class ChemistryController {
+  private runtime: LiveToolRuntime = defaultLiveToolRuntime;
+  private runtimeInjected = false;
+
+  useRuntime(runtime: LiveToolRuntime): this {
+    this.runtime = runtime;
+    this.runtimeInjected = true;
+    return this;
+  }
+
   @Tool({
     name: 'fetch_compound',
     description: 'Fetch or replay compound metadata with explicit source provenance.',
@@ -170,9 +181,15 @@ export class ChemistryController {
       inputSchema: fetchCompoundInput,
       dataSchema: fetchCompoundData,
       context,
-      operation: (value) => {
-        const status: z.infer<typeof sourceStatus> =
-          value.source === 'FIXTURE' ? 'FIXTURE' : fallbackStatus(value.fallbackPolicy);
+      operation: async (value) => {
+        if (value.source === 'PUBCHEM') {
+          try {
+            return await this.fetchPubChemCompound(value);
+          } catch (error) {
+            if (!fixtureFallbackAllowed(value.fallbackPolicy)) throw error;
+          }
+        }
+        const status: z.infer<typeof sourceStatus> = 'FIXTURE';
         return {
           compound: {
             compoundId: value.compoundRef,
@@ -181,14 +198,36 @@ export class ChemistryController {
             sourceStatus: status,
             name: value.source === 'FIXTURE' ? 'Fixture compound' : value.compoundRef,
             smiles: 'CCO',
-            scientificUse: status === 'LIVE',
-            validationStatus:
-              status === 'LIVE' ? ('SCIENTIFIC' as const) : ('VERIFIED_FIXTURE' as const),
+            scientificUse: false,
+            validationStatus: 'VERIFIED_FIXTURE' as const,
           },
           provenance: provenance('chemistry-fixture-adapter', 'fetch_compound', status, value),
         };
       },
     });
+  }
+
+  private async fetchPubChemCompound(value: z.infer<typeof fetchCompoundInput>) {
+    const environment = loadMcpEnvironment();
+    if (!environment.PUBCHEM_ENABLED && !this.runtimeInjected) {
+      throw chemistryUnavailable(value.fallbackPolicy, value.source);
+    }
+    const url = `https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/${encodeURIComponent(value.compoundRef)}/property/Title,IsomericSMILES/JSON`;
+    const payload = await this.runtime.fetchJson(url);
+    const parsed = parsePubChemProperty(payload, value.compoundRef);
+    return {
+      compound: {
+        compoundId: String(parsed.cid),
+        compoundRef: value.compoundRef,
+        source: value.source,
+        sourceStatus: 'LIVE' as const,
+        name: parsed.title,
+        smiles: parsed.smiles,
+        scientificUse: true,
+        validationStatus: 'SCIENTIFIC' as const,
+      },
+      provenance: provenance('pubchem', 'fetch_compound', 'LIVE', value, url),
+    };
   }
 
   @Tool({
@@ -321,11 +360,26 @@ export class ChemistryController {
       inputSchema: descriptorInput,
       dataSchema: descriptorData,
       context,
-      operation: (value) => ({
-        compoundId: value.compoundId,
-        descriptors: estimateDescriptors(value.smiles),
-        provenance: provenance('descriptor-estimator', value.method, 'FIXTURE', value),
-      }),
+      operation: async (value) => {
+        const environment = loadMcpEnvironment();
+        if (value.method === 'rdkit' && (environment.RDKIT_ENABLED || this.runtimeInjected)) {
+          const result = await this.runtime.runCommand(environment.RDKIT_PYTHON_COMMAND, [
+            '-c',
+            rdkitDescriptorScript(),
+            value.smiles,
+          ]);
+          return {
+            compoundId: value.compoundId,
+            descriptors: parseDescriptorJson(result.stdout),
+            provenance: provenance('rdkit', value.method, 'LIVE', value),
+          };
+        }
+        return {
+          compoundId: value.compoundId,
+          descriptors: estimateDescriptors(value.smiles),
+          provenance: provenance('descriptor-estimator', value.method, 'FIXTURE', value),
+        };
+      },
     });
   }
 
@@ -353,30 +407,128 @@ export class ChemistryController {
       inputSchema: prepareLigandInput,
       dataSchema: prepareLigandData,
       context,
-      operation: (value) => ({
-        ligandId: `${value.compoundId}-ligand`,
-        compoundId: value.compoundId,
-        artifactRef: `mcp://ligands/${value.runId}/${value.compoundId}`,
-        format: 'FIXTURE_JSON' as const,
-        sourceStatus: 'FIXTURE' as const,
-        scientificUse: false,
-        provenance: provenance('ligand-preparer', value.preparationMethod, 'FIXTURE', value),
-      }),
+      operation: async (value) => {
+        const environment = loadMcpEnvironment();
+        if (environment.OPENBABEL_ENABLED || this.runtimeInjected) {
+          const command = process.env.OPENBABEL_COMMAND ?? 'obabel';
+          await this.runtime.runCommand(command, [
+            `-:${value.smiles}`,
+            '-ismi',
+            '-opdbqt',
+            '--gen3d',
+          ]);
+          return {
+            ligandId: `${value.compoundId}-ligand`,
+            compoundId: value.compoundId,
+            artifactRef: `mcp://ligands/${value.runId}/${value.compoundId}.pdbqt`,
+            format: 'PDBQT' as const,
+            sourceStatus: 'LIVE' as const,
+            scientificUse: true,
+            provenance: provenance('open-babel', value.preparationMethod, 'LIVE', value),
+          };
+        }
+        return {
+          ligandId: `${value.compoundId}-ligand`,
+          compoundId: value.compoundId,
+          artifactRef: `mcp://ligands/${value.runId}/${value.compoundId}`,
+          format: 'FIXTURE_JSON' as const,
+          sourceStatus: 'FIXTURE' as const,
+          scientificUse: false,
+          provenance: provenance('ligand-preparer', value.preparationMethod, 'FIXTURE', value),
+        };
+      },
     });
   }
 }
 
-function fallbackStatus(policy: z.infer<typeof fallbackPolicy>): z.infer<typeof sourceStatus> {
-  if (policy === 'LIVE_ONLY' || policy === 'CACHE_THEN_LIVE') {
+function chemistryUnavailable(
+  policy: z.infer<typeof fallbackPolicy>,
+  source: 'PUBCHEM' | 'FIXTURE',
+): ToolExecutionError {
+  return new ToolExecutionError(
+    'CHEMISTRY_LIVE_CONNECTOR_UNAVAILABLE',
+    'CONNECTOR',
+    'Live chemistry retrieval is not configured for this MCP deployment.',
+    true,
+    { policy, source },
+  );
+}
+
+function fixtureFallbackAllowed(policy: z.infer<typeof fallbackPolicy>): boolean {
+  return policy === 'CACHE_THEN_LIVE_THEN_FIXTURE' || policy === 'LIVE_THEN_CACHE_THEN_FIXTURE';
+}
+
+function parsePubChemProperty(payload: unknown, fallbackCid: string) {
+  if (
+    typeof payload === 'object' &&
+    payload !== null &&
+    'PropertyTable' in payload &&
+    typeof payload.PropertyTable === 'object' &&
+    payload.PropertyTable !== null &&
+    'Properties' in payload.PropertyTable &&
+    Array.isArray(payload.PropertyTable.Properties)
+  ) {
+    const first = payload.PropertyTable.Properties[0] as unknown;
+    if (typeof first === 'object' && first !== null) {
+      const record = first as Record<string, unknown>;
+      const smiles = record.IsomericSMILES;
+      if (typeof smiles === 'string' && smiles.length > 0) {
+        return {
+          cid:
+            typeof record.CID === 'number' || typeof record.CID === 'string'
+              ? record.CID
+              : fallbackCid,
+          title:
+            typeof record.Title === 'string' && record.Title.length > 0
+              ? record.Title
+              : `PubChem ${fallbackCid}`,
+          smiles,
+        };
+      }
+    }
+  }
+  throw new ToolExecutionError(
+    'PUBCHEM_RESPONSE_INVALID',
+    'CONNECTOR',
+    'PubChem response did not contain the required compound properties.',
+    false,
+    { compoundRef: fallbackCid },
+  );
+}
+
+function rdkitDescriptorScript(): string {
+  return [
+    'import json, sys',
+    'from rdkit import Chem',
+    'from rdkit.Chem import Descriptors, Lipinski',
+    'mol = Chem.MolFromSmiles(sys.argv[1])',
+    'if mol is None: raise SystemExit(2)',
+    'rings = mol.GetRingInfo().AtomRings()',
+    'print(json.dumps({"heavyAtomCount": mol.GetNumHeavyAtoms(), "heteroAtomCount": Lipinski.NumHeteroatoms(mol), "aromaticRingEstimate": sum(1 for ring in rings if all(mol.GetAtomWithIdx(i).GetIsAromatic() for i in ring)), "rotatableBondEstimate": Lipinski.NumRotatableBonds(mol)}))',
+  ].join('; ');
+}
+
+function parseDescriptorJson(output: string) {
+  try {
+    const parsed = JSON.parse(output) as Record<string, unknown>;
+    return {
+      heavyAtomCount: nonnegativeInteger(parsed.heavyAtomCount),
+      heteroAtomCount: nonnegativeInteger(parsed.heteroAtomCount),
+      aromaticRingEstimate: nonnegativeInteger(parsed.aromaticRingEstimate),
+      rotatableBondEstimate: nonnegativeInteger(parsed.rotatableBondEstimate),
+    };
+  } catch {
     throw new ToolExecutionError(
-      'CHEMISTRY_LIVE_CONNECTOR_UNAVAILABLE',
+      'RDKIT_OUTPUT_INVALID',
       'CONNECTOR',
-      'Live chemistry retrieval is not configured for this MCP deployment.',
-      true,
-      { policy },
+      'RDKit descriptor output was not valid JSON.',
+      false,
     );
   }
-  return 'FIXTURE';
+}
+
+function nonnegativeInteger(value: unknown): number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : 0;
 }
 
 function estimateDescriptors(smiles: string) {
@@ -392,6 +544,7 @@ function provenance(
   method: string,
   status: 'LIVE' | 'CACHED' | 'FIXTURE',
   parameters: unknown,
+  sourceUri?: string,
 ) {
   return {
     connectorId,
@@ -399,7 +552,7 @@ function provenance(
     method,
     methodVersion: '1.0.0',
     status,
-    sourceUri: `https://immunograph.local/${connectorId}`,
+    sourceUri: sourceUri ?? `https://immunograph.local/${connectorId}`,
     parameters: parameters as Record<string, unknown>,
     predictionSource: status,
     scientificUse: status === 'LIVE',

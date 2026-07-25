@@ -279,6 +279,8 @@ adapters are configured in a future deployment.
 - `map_epitopes_to_structure`
 - `calculate_surface_accessibility`
 - `calculate_structure_confidence`
+- `detect_binding_pockets`
+- `create_molstar_view`
 
 All outputs include source status and provenance. Fixture outputs set `scientificUse=false` unless
 the source is an explicitly configured live connector.
@@ -299,7 +301,7 @@ estimation, and ligand-preparation references with explicit fixture provenance.
 - `calculate_molecular_descriptors`
 - `prepare_ligand`
 
-Live-only PubChem/RDKit/OpenBabel requests fail closed until those runtime adapters are configured.
+Live-only PubChem/RDKit/Open Babel requests fail closed until those runtime adapters are configured.
 
 ## 8. Docking tools
 
@@ -316,6 +318,7 @@ validation, docking replay, pose clustering, and interaction extraction.
 - `run_docking`
 - `cluster_docking_poses`
 - `extract_interactions`
+- `create_molstar_view`
 
 Vina/live docking mode fails closed when the runtime is unavailable. Fixture docking output is
 clearly marked as fixture-backed and not a validated live docking result.

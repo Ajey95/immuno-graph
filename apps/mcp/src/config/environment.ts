@@ -81,11 +81,11 @@ const rawMcpEnvironmentSchema = z.object({
   RCSB_PDB_ENABLED: z
     .enum(['true', 'false'])
     .transform((v) => v === 'true')
-    .default('true'),
+    .default('false'),
   ALPHAFOLD_DB_ENABLED: z
     .enum(['true', 'false'])
     .transform((v) => v === 'true')
-    .default('true'),
+    .default('false'),
   CHEMISTRY_ENABLED: z
     .enum(['true', 'false'])
     .transform((v) => v === 'true')
@@ -93,20 +93,42 @@ const rawMcpEnvironmentSchema = z.object({
   PUBCHEM_ENABLED: z
     .enum(['true', 'false'])
     .transform((v) => v === 'true')
-    .default('true'),
+    .default('false'),
   RDKIT_ENABLED: z
     .enum(['true', 'false'])
     .transform((v) => v === 'true')
     .default('false'),
+  RDKIT_PYTHON_COMMAND: z.string().min(1).default('python'),
   OPENBABEL_ENABLED: z
     .enum(['true', 'false'])
     .transform((v) => v === 'true')
     .default('false'),
+  OPENBABEL_COMMAND: z.string().min(1).default('obabel'),
   DOCKING_ENABLED: z
     .enum(['true', 'false'])
     .transform((v) => v === 'true')
     .default('true'),
   VINA_ENABLED: z
+    .enum(['true', 'false'])
+    .transform((v) => v === 'true')
+    .default('false'),
+  VINA_COMMAND: z.string().min(1).default('vina'),
+  PLIP_ENABLED: z
+    .enum(['true', 'false'])
+    .transform((v) => v === 'true')
+    .default('false'),
+  PLIP_COMMAND: z.string().min(1).default('plip'),
+  FPOCKET_ENABLED: z
+    .enum(['true', 'false'])
+    .transform((v) => v === 'true')
+    .default('false'),
+  FPOCKET_COMMAND: z.string().min(1).default('fpocket'),
+  FREESASA_ENABLED: z
+    .enum(['true', 'false'])
+    .transform((v) => v === 'true')
+    .default('false'),
+  FREESASA_COMMAND: z.string().min(1).default('freesasa'),
+  MOLSTAR_ENABLED: z
     .enum(['true', 'false'])
     .transform((v) => v === 'true')
     .default('false'),

@@ -369,12 +369,17 @@ Required tools:
 - `validate_structure`;
 - `map_epitopes_to_structure`;
 - `calculate_surface_accessibility`;
-- `calculate_structure_confidence`.
+- `calculate_structure_confidence`;
+- `detect_binding_pockets`;
+- `create_molstar_view`.
 
 Preferred live sources:
 
 - RCSB PDB API;
-- AlphaFold DB API.
+- AlphaFold DB API;
+- fpocket;
+- FreeSASA / DSSP;
+- Mol* view-state generation.
 
 Fallback:
 
@@ -412,12 +417,16 @@ Required tools:
 - `validate_docking_box`;
 - `run_docking`;
 - `cluster_docking_poses`;
-- `extract_interactions`.
+- `extract_interactions`;
+- `create_molstar_view`.
 
 Preferred dependencies:
 
 - AutoDock Vina;
-- Meeko or equivalent preparation utilities;
+- Open Babel;
+- RDKit;
+- PLIP;
+- Mol* view-state generation;
 - local structure/ligand preparation tools.
 
 Fallback:
@@ -838,14 +847,24 @@ GRAPHBEPI_MODE=fixture
 STRUCTURE_ENABLED=true
 RCSB_PDB_ENABLED=true
 ALPHAFOLD_DB_ENABLED=true
+FPOCKET_ENABLED=true
+FPOCKET_COMMAND=fpocket
+FREESASA_ENABLED=true
+FREESASA_COMMAND=freesasa
+MOLSTAR_ENABLED=true
 
 CHEMISTRY_ENABLED=true
 PUBCHEM_ENABLED=true
-RDKIT_ENABLED=false
-OPENBABEL_ENABLED=false
+RDKIT_ENABLED=true
+RDKIT_PYTHON_COMMAND=python3
+OPENBABEL_ENABLED=true
+OPENBABEL_COMMAND=obabel
 
 DOCKING_ENABLED=true
-VINA_ENABLED=false
+VINA_ENABLED=true
+VINA_COMMAND=vina
+PLIP_ENABLED=true
+PLIP_COMMAND=plip
 DOCKING_FIXTURE_FALLBACK_ENABLED=true
 
 EXECUTION_MODE=HYBRID
