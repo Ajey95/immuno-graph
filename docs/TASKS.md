@@ -8,14 +8,14 @@ This checklist mirrors [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md). Check a
 - `npm run lint`: passed.
 - `npm run format:check`: passed.
 - `npm run build`: passed.
-- `npm run test`: passed, 67 test files and 277 tests.
+- `npm run test`: passed, 67 test files and 282 tests.
 - `npm run db:seed`: passed on the default local database.
 - `npm run db:migrate`: passed against a clean temporary SQLite database. The default `packages/database/prisma/immunograph.db` was locked during one verification attempt, which usually means a local API/dev process or SQLite handle was still open.
 - `npm run connectors:check:iedb`: passed against the live IEDB MHC-I tools API.
 - `npm run connectors:check:mhcflurry`: passed against the local `.venv-mhcflurry` install.
 - `npm run connectors:check:iedb-population`: passed against the local IEDB official standalone population-coverage package.
 
-Implementation status summary: the offline fixture/synthetic path, REST API, MCP tools, MCP-visible agentic workflow descriptor, database repositories, core algorithms, project dashboard, workflow graph, evidence graph, candidate review, shortlist approval, diagnostics, JSON/CSV report artifacts, mandatory research-package ZIP export with checksums, evidence-graph/workflow-trace artifact exports, API liveness probe, API-owned `LIVE -> CACHED` reuse, IEDB MHC-I/MHC-II live adapters, optional local MHCflurry MHC-I adapter, official IEDB standalone population-coverage adapter, and mixed-method hybrid routing are implemented. Public deployment hardening and full browser/E2E rehearsal remain incomplete.
+Implementation status summary: the offline fixture/synthetic path, REST API, MCP tools, MCP-visible PRD v1.1 agentic workflow descriptor, bounded LangGraph agent workflow, database repositories, core algorithms, project dashboard, workflow graph, evidence graph, candidate review, shortlist approval, diagnostics, JSON/CSV report artifacts, mandatory research-package ZIP export with checksums, evidence-graph/workflow-trace artifact exports, API liveness probe, API-owned `LIVE -> CACHED` reuse, IEDB MHC-I/MHC-II live adapters, optional local MHCflurry MHC-I adapter, official IEDB standalone population-coverage adapter, mixed-method hybrid routing, and mandatory fixture-safe structure/chemistry/docking MCP tool groups are implemented. Public deployment hardening, full browser/E2E rehearsal, and production live structure/chemistry/docking runtime adapters remain incomplete.
 
 ## Phase 0 — Foundation
 
@@ -27,7 +27,7 @@ Implementation status summary: the offline fixture/synthetic path, REST API, MCP
 - [x] Scaffold React/Vite web app.
 - [x] Configure Tailwind CSS and shadcn/ui.
 - [x] Scaffold Fastify API with Zod environment validation and Pino-backed logging, without routes.
-- [x] Scaffold one NitroStack `apps/mcp` server with four empty capability modules.
+- [x] Scaffold one NitroStack `apps/mcp` server with modular MCP capability groups.
 - [x] Scaffold Prisma/SQLite package without database models.
 - [x] Add root build/typecheck/lint/test scripts.
 - [x] Add `.env.example` and startup environment validation.
@@ -97,15 +97,21 @@ live cache, and never be presented as provider-produced, experimental, clinical,
 
 ## Phase 4 — MCP
 
-- [x] Implement Prediction tool contracts in `immunograph-mcp`; connector execution remains behind capability ports.
+- [x] Implement Immunoinformatics tool contracts in `immunograph-mcp`; connector execution remains behind capability ports.
 - [x] Implement Evidence tool contracts in `immunograph-mcp`; external coverage execution remains behind a capability port.
 - [x] Implement Constraint tools in `immunograph-mcp` using shared deterministic algorithms.
 - [x] Implement Report tool contracts in `immunograph-mcp`; artifact I/O remains behind a capability port.
-- [x] Register all four capability modules in one NitroStack server process.
+- [x] Implement Structure tools: fetch, validate, epitope mapping, surface accessibility, and confidence.
+- [x] Implement Chemistry tools: fetch, validate, deduplicate, descriptors, and ligand preparation.
+- [x] Implement Docking tools: receptor preparation, docking-box validation, docking replay, pose clustering, and interaction extraction.
+- [x] Register all seven capability modules in one NitroStack server process.
 - [x] Add common tool envelopes, deterministic hashes, structured logging, and error mapping.
 - [x] Add task progress/cancellation checks to tool execution, including long prediction tools.
 - [x] Embed schema-validated example calls for every tool for NitroStudio discovery.
 - [x] Expose the internal agent/orchestrator model through the read-only `describe_agentic_workflow` MCP tool.
+- [x] Implement bounded LangGraph workflow execution through `run_agentic_workflow`.
+- [x] Implement grounded researcher chat contract through `chat_with_research_agent`.
+- [x] Implement MCP research-package export contract through `export_research_package`.
 - [x] Add MCP discovery, schema, deterministic execution, fallback, and logging contract tests.
 
 ## Phase 5 — Workflow and API
@@ -136,6 +142,7 @@ live cache, and never be presented as provider-produced, experimental, clinical,
 - [x] Expose safe fixture-manifest and application-build diagnostic contracts.
 - [x] Implement persisted, resumable SSE event replay and paginated history endpoint.
 - [x] Implement report, artifact-list, and safe artifact-download endpoints.
+- [x] Implement API delegation endpoints for `POST /runs/:runId/agent-workflow` and `POST /runs/:runId/chat`.
 - [x] Add REST integration tests, error envelopes, structured logging, and Zod validation.
 - [x] Add database-backed API application-service integration tests.
 
@@ -158,6 +165,9 @@ live cache, and never be presented as provider-produced, experimental, clinical,
 - [x] Add parser samples and tests.
 - [x] Verify `LIVE -> CACHED` behavior.
 - [x] Verify each fallback reason and status display.
+- [ ] Implement production live structure retrieval adapter.
+- [ ] Implement production live chemistry adapter.
+- [ ] Implement production live docking/Vina runtime adapter.
 
 ## Phase 7 — UI
 

@@ -215,6 +215,22 @@ export const reportBody = z
     path: ['formats'],
     message: 'formats must be unique',
   });
+export const agentMode = z.enum(['LLM', 'DETERMINISTIC']);
+export const agentWorkflowBody = z
+  .object({
+    objective: z.string().trim().min(1).max(2_000),
+    agentMode,
+    approvedToolNames: z.array(z.string().trim().min(1)).min(1),
+    requireHumanApproval: z.boolean(),
+  })
+  .strict();
+export const agentChatBody = z
+  .object({
+    question: z.string().trim().min(1).max(2_000),
+    evidenceSummary: z.record(z.unknown()).default({}),
+    agentMode,
+  })
+  .strict();
 export const idempotencyHeaders = z
   .object({
     'idempotency-key': z.string().min(1).max(200).optional(),

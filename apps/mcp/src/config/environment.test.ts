@@ -52,4 +52,41 @@ describe('MCP environment', () => {
       IEDB_POPULATION_COVERAGE_TIMEOUT_MS: 5000,
     });
   });
+
+  it('loads PRD v1.1 agent, LLM, structure, chemistry, and docking flags', () => {
+    process.env = {
+      NODE_ENV: 'production',
+      AGENT_MODE: 'LLM',
+      LLM_ENABLED: 'true',
+      OPENAI_API_KEY: 'test-key',
+      LLM_MODEL: 'gpt-4.1-mini',
+      STRUCTURE_ENABLED: 'true',
+      RCSB_PDB_ENABLED: 'true',
+      ALPHAFOLD_DB_ENABLED: 'true',
+      CHEMISTRY_ENABLED: 'true',
+      PUBCHEM_ENABLED: 'true',
+      RDKIT_ENABLED: 'false',
+      OPENBABEL_ENABLED: 'false',
+      DOCKING_ENABLED: 'true',
+      VINA_ENABLED: 'false',
+      DOCKING_FIXTURE_FALLBACK_ENABLED: 'true',
+    };
+
+    expect(loadMcpEnvironment()).toMatchObject({
+      AGENT_MODE: 'LLM',
+      LLM_ENABLED: true,
+      OPENAI_API_KEY: 'test-key',
+      LLM_MODEL: 'gpt-4.1-mini',
+      STRUCTURE_ENABLED: true,
+      RCSB_PDB_ENABLED: true,
+      ALPHAFOLD_DB_ENABLED: true,
+      CHEMISTRY_ENABLED: true,
+      PUBCHEM_ENABLED: true,
+      RDKIT_ENABLED: false,
+      OPENBABEL_ENABLED: false,
+      DOCKING_ENABLED: true,
+      VINA_ENABLED: false,
+      DOCKING_FIXTURE_FALLBACK_ENABLED: true,
+    });
+  });
 });

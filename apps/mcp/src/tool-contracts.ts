@@ -1089,26 +1089,35 @@ export const exportTraceContract = defineContract({
 });
 
 const toolGroupNameSchema = z.enum([
-  'Prediction Tools',
+  'Immunoinformatics Tools',
   'Evidence Tools',
   'Constraint Tools',
-  'Report Tools',
+  'Structure Tools',
+  'Chemistry Tools',
+  'Docking Tools',
+  'Report / Export Tools',
 ]);
 
 const internalAgentSchema = z.object({
   agentId: identifierSchema,
   displayName: identifierSchema,
   role: identifierSchema,
-  status: z.enum(['ACTIVE', 'INTERFACE_READY']),
+  status: z.enum(['ACTIVE']),
   scope: identifierSchema,
   responsibilities: z.array(identifierSchema).min(1),
   allowedToolGroups: z.array(toolGroupNameSchema).min(1),
+  maxIterations: positiveInteger,
+  contextBudget: identifierSchema,
+  retryPolicy: identifierSchema,
+  abstentionConditions: z.array(identifierSchema).min(1),
+  forbiddenActions: z.array(identifierSchema).min(1),
   decisionPolicy: z
     .object({
       mayGenerateScientificValues: z.boolean(),
       mustUseMcpToolsForEvidence: z.boolean(),
       mustExposeProvenance: z.boolean(),
       abstainWhenEvidenceMissing: z.boolean(),
+      llmOutputTrustedWithoutValidation: z.boolean(),
     })
     .strict(),
 });
@@ -1157,8 +1166,9 @@ export const describeAgenticWorkflowContract = defineContract({
       guardrails: z
         .object({
           authRequired: z.literal(false),
-          conservationInMvp: z.literal(false),
-          toxicityInMvp: z.literal(false),
+          langGraphRequired: z.literal(true),
+          llmAgentModeRequiredWhenConfigured: z.literal(true),
+          deterministicFallbackRequired: z.literal(true),
           graphBepiMode: z.literal('FIXTURE_ONLY'),
           syntheticScientificUse: z.literal(false),
         })
@@ -1176,5 +1186,123 @@ export const describeAgenticWorkflowContract = defineContract({
     runId: 'run-1',
     runIntent: 'MVP_EPITOPE_PRIORITIZATION' as const,
     includeFutureInterfaces: true,
+  },
+});
+
+const agentModeSchema = z.enum(['LLM', 'DETERMINISTIC']);
+const reactLoopSchema = z.tuple([
+  z.literal('PLAN'),
+  z.literal('ACT'),
+  z.literal('OBSERVE'),
+  z.literal('VERIFY'),
+  z.literal('DECIDE'),
+]);
+const agentStepSchema = z
+  .object({
+    agentId: identifierSchema,
+    iteration: positiveInteger,
+    loop: reactLoopSchema,
+    selectedAction: identifierSchema,
+    toolNames: z.array(identifierSchema),
+    observation: identifierSchema,
+    verification: z.enum(['PASSED', 'REQUIRES_APPROVAL', 'ABSTAINED']),
+    decision: z.enum(['CONTINUE', 'REQUEST_APPROVAL', 'ABSTAIN', 'COMPLETE']),
+    inputHash: sha256Schema,
+    outputHash: sha256Schema,
+  })
+  .strict();
+
+export const runAgenticWorkflowContract = defineContract({
+  name: 'run_agentic_workflow',
+  description:
+    'Run the strict PRD v1.1 LangGraph bounded-agent workflow inside the single NitroStack MCP app.',
+  inputSchema: z
+    .object({
+      runId: identifierSchema,
+      objective: identifierSchema,
+      agentMode: agentModeSchema,
+      approvedToolNames: z.array(identifierSchema).min(1),
+      requireHumanApproval: z.boolean(),
+    })
+    .strict(),
+  dataSchema: z
+    .object({
+      runtime: z.literal('LANGGRAPH'),
+      agentMode: agentModeSchema,
+      llmUsed: z.boolean(),
+      status: z.enum(['COMPLETED', 'AWAITING_APPROVAL', 'ABSTAINED']),
+      nextApprovalGate: identifierSchema.nullable(),
+      steps: z.array(agentStepSchema).min(1),
+      warnings: z.array(identifierSchema),
+    })
+    .strict(),
+  exampleInput: {
+    runId: 'run-1',
+    objective: 'Prioritize epitopes with complete provenance.',
+    agentMode: 'DETERMINISTIC' as const,
+    approvedToolNames: ['validate_sequence', 'rank_candidates'],
+    requireHumanApproval: true,
+  },
+});
+
+export const chatWithResearchAgentContract = defineContract({
+  name: 'chat_with_research_agent',
+  description:
+    'Answer researcher or judge questions through the bounded agent policy using supplied evidence only.',
+  inputSchema: z
+    .object({
+      runId: identifierSchema,
+      question: identifierSchema,
+      evidenceSummary: jsonRecord,
+      agentMode: agentModeSchema,
+    })
+    .strict(),
+  dataSchema: z
+    .object({
+      answer: identifierSchema,
+      grounded: z.boolean(),
+      citedEvidenceKeys: z.array(identifierSchema),
+      limitations: z.array(identifierSchema),
+      agentMode: agentModeSchema,
+      llmUsed: z.boolean(),
+    })
+    .strict(),
+  exampleInput: {
+    runId: 'run-1',
+    question: 'What is agentic about this workflow?',
+    evidenceSummary: { workflow: 'LangGraph bounded agents call typed MCP tools.' },
+    agentMode: 'DETERMINISTIC' as const,
+  },
+});
+
+export const exportResearchPackageContract = defineContract({
+  name: 'export_research_package',
+  description:
+    'Return the PRD v1.1 final research package contract and deterministic artifact metadata.',
+  inputSchema: z
+    .object({
+      runId: identifierSchema,
+      idempotencyKey: identifierSchema,
+      includeStructure: z.boolean(),
+      includeChemistry: z.boolean(),
+      includeDocking: z.boolean(),
+      includeAgentTrace: z.boolean(),
+    })
+    .strict(),
+  dataSchema: z
+    .object({
+      artifact: artifactSchema,
+      requiredSections: z.array(identifierSchema).min(1),
+      includesCsvExports: z.literal(true),
+      includesAgentTrace: z.boolean(),
+    })
+    .strict(),
+  exampleInput: {
+    runId: 'run-1',
+    idempotencyKey: 'research-package-run-1',
+    includeStructure: true,
+    includeChemistry: true,
+    includeDocking: true,
+    includeAgentTrace: true,
   },
 });

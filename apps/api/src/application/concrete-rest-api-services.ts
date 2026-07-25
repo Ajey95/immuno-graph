@@ -1,4 +1,5 @@
 import type { ApiOperation, ApiServiceContext, RestApiServices } from '../services.js';
+import type { AgentService } from './services/agent-service.js';
 import type { CandidateService } from './services/candidate-service.js';
 import type { DiagnosticsService } from './services/diagnostics-service.js';
 import type { EventService } from './services/event-service.js';
@@ -15,6 +16,7 @@ export interface FocusedApplicationServices {
   evidence: EvidenceService;
   reports: ReportService;
   diagnostics: DiagnosticsService;
+  agents: AgentService;
 }
 
 export class ConcreteRestApiServices implements RestApiServices {
@@ -98,6 +100,13 @@ export class ConcreteRestApiServices implements RestApiServices {
         );
       case 'artifacts.list':
         return this.services.reports.listArtifacts(input.runId as string);
+      case 'agents.runWorkflow':
+        return this.services.agents.runWorkflow(
+          input as Parameters<AgentService['runWorkflow']>[0],
+          context,
+        );
+      case 'agents.chat':
+        return this.services.agents.chat(input as Parameters<AgentService['chat']>[0], context);
       case 'settings.profiles':
         return this.services.diagnostics.profiles();
       case 'settings.runtime':

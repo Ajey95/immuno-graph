@@ -168,7 +168,62 @@ Heartbeat comments are sent every 15 seconds. Clients reconnect with exponential
 
 Paginated JSON event history for debugging and replay views.
 
-## 5. Candidate endpoints
+## 5. Agentic workflow endpoints
+
+These endpoints expose the PRD v1.1 AI-agentic methodology through the Fastify API while keeping
+the NitroStack MCP app as the execution boundary. Routes must remain thin adapters and delegate to
+shared application services, which call typed MCP tools.
+
+### `POST /runs/:runId/agent-workflow`
+
+Runs the bounded LangGraph agent workflow for a run.
+
+```json
+{
+  "objective": "Prioritize epitopes with structure, chemistry, and docking governance.",
+  "agentMode": "DETERMINISTIC",
+  "approvedToolNames": ["validate_sequence", "rank_candidates", "run_docking"],
+  "requireHumanApproval": true
+}
+```
+
+Returns `202`.
+
+Response data includes:
+
+- `runtime: "LANGGRAPH"`;
+- `agentMode: "LLM" | "DETERMINISTIC"`;
+- `llmUsed`;
+- `status: "COMPLETED" | "AWAITING_APPROVAL" | "ABSTAINED"`;
+- `nextApprovalGate`;
+- bounded workflow `steps`;
+- warnings.
+
+If `agentMode="LLM"` but no validated LLM provider is configured, the MCP workflow runs deterministic
+routing and returns an explicit warning. LLM text must never become scientific evidence.
+
+### `POST /runs/:runId/chat`
+
+Answers a researcher question using only supplied run/evidence context.
+
+```json
+{
+  "question": "Why is the top candidate marked for review?",
+  "agentMode": "DETERMINISTIC",
+  "audience": "RESEARCHER",
+  "evidenceSummary": {
+    "candidate-1": "High binding agreement, missing live population coverage."
+  }
+}
+```
+
+Returns `200`.
+
+The response must include whether the answer is grounded, cited evidence keys, limitations, requested
+agent mode, and whether an LLM was actually used. If evidence is missing, the agent abstains instead
+of fabricating.
+
+## 6. Candidate endpoints
 
 ### `GET /runs/:runId/candidates`
 
@@ -235,7 +290,7 @@ Query parameters: `populationId`, `purpose=CANDIDATE_RANKING|SHORTLIST_OPTIMIZAT
 
 Query parameter: `track=MHCI|MHCII`. Returns the final ranking snapshot reference, deterministic selection steps, marginal gains, cumulative coverage, final set-level coverage, and algorithm version. B-cell requests return `INVALID_COVERAGE_TRACK`.
 
-## 6. Shortlist approval
+## 7. Shortlist approval
 
 ### `POST /runs/:runId/approvals/shortlist`
 
@@ -256,7 +311,7 @@ Constraints:
 - stale snapshot returns `409 RANKING_CHANGED`;
 - at least one candidate is required unless the researcher explicitly approves an empty shortlist with `allowEmpty: true` and a note.
 
-## 7. Evidence and graph endpoints
+## 8. Evidence and graph endpoints
 
 ### `GET /runs/:runId/evidence-graph`
 
@@ -272,7 +327,7 @@ Types: `sequence-map`, `population-coverage`, `constraint-summary`, `score-distr
 
 Returns a versioned view model. The endpoint never returns an AI-generated scientific image.
 
-## 8. Connector endpoints
+## 9. Connector endpoints
 
 ### `GET /connectors`
 
@@ -297,7 +352,7 @@ Health is operational availability, not scientific validation. GraphBepi is `AVA
 
 Returns `200` with `{ "status": "ok" }` when the Fastify process is responsive. This endpoint does not call application services, the database, MCP, or external scientific connectors.
 
-## 9. Explanation and report endpoints
+## 10. Explanation and report endpoints
 
 ### `POST /runs/:runId/candidates/:candidateId/explanation`
 
@@ -330,7 +385,7 @@ Lists artifact metadata.
 
 Streams an artifact using a server-resolved path. Rejects missing, mismatched, or path-escaping records.
 
-## 10. Settings endpoints
+## 11. Settings endpoints
 
 ### `GET /settings/profiles`
 
@@ -361,7 +416,7 @@ Returns safe runtime information: demo mode, LLM enabled, database status, artif
   },
   "build": {
     "applicationVersion": "0.1.0",
-    "specificationVersion": "0.6.0-draft",
+    "specificationVersion": "1.1.0",
     "commitSha": null,
     "builtAt": null
   }
@@ -370,7 +425,7 @@ Returns safe runtime information: demo mode, LLM enabled, database status, artif
 
 Status values are `AVAILABLE`, `DEGRADED`, or `UNAVAILABLE`. The response never contains secret values, filesystem paths, full fixture payloads, or FASTA sequences.
 
-## 11. HTTP status mapping
+## 12. HTTP status mapping
 
 | Status | Use |
 |---|---|
@@ -386,7 +441,7 @@ Status values are `AVAILABLE`, `DEGRADED`, or `UNAVAILABLE`. The response never 
 | `500` | Unexpected internal error |
 | `503` | Required local service unavailable |
 
-## 12. Stable error catalog
+## 13. Stable error catalog
 
 Initial codes:
 
@@ -406,6 +461,9 @@ STAGE_NOT_RETRYABLE
 CONNECTOR_TIMEOUT
 CONNECTOR_RATE_LIMITED
 CONNECTOR_UNAVAILABLE
+STRUCTURE_LIVE_CONNECTOR_UNAVAILABLE
+CHEMISTRY_LIVE_CONNECTOR_UNAVAILABLE
+DOCKING_RUNTIME_UNAVAILABLE
 FIXTURE_NOT_FOUND
 FIXTURE_HASH_MISMATCH
 NORMALIZATION_PROFILE_MISSING
