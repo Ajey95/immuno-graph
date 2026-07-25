@@ -22,3 +22,7 @@ tools/bin/
 tools/src/
 tools/micromamba/
 tools/science-env/
+__pycache__/
+scripts/science/__pycache__/
+local-review-output/
+C*UsersvvtheDownloadsprojectsimmuno-graph/
