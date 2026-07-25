@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { deflateSync } from 'node:zlib';
 
 import { canonicalJson, type CanonicalJsonValue } from '@immunograph/algorithms';
 import type { Repositories } from '@immunograph/database';
@@ -185,6 +186,26 @@ export async function createResearchPackageArtifact(
     {
       path: 'construct/construct-optimization.json',
       value: shortlistOptimizations.map(plainRecord),
+    },
+    { path: 'docking/receptor.pdbqt', value: fixtureReceptorPdbqt(run.id) },
+    { path: 'docking/ligand.pdbqt', value: fixtureLigandPdbqt(run.id) },
+    { path: 'docking/docking-output.pdbqt', value: fixtureDockingOutputPdbqt(run.id) },
+    {
+      path: 'docking/docking-poses.json',
+      value: fixtureDockingPoses(run.id, selectedCandidates),
+    },
+    {
+      path: 'docking/docking-summary.json',
+      value: fixtureDockingSummary(run.id, selectedCandidates),
+    },
+    {
+      path: 'docking/docking-provenance.json',
+      value: fixtureDockingProvenance(run.id),
+    },
+    {
+      path: 'docking/docking-view.png',
+      value: null,
+      data: createFixtureDockingPreviewPng(),
     },
     {
       path: 'evidence/evidence-graph.json',
@@ -384,6 +405,266 @@ function constructFasta(runId: string, sequence: string): string {
   return `>immunograph_${runId}_research_construct\n${sequence}\n`;
 }
 
+function fixtureReceptorPdbqt(runId: string): string {
+  return [
+    'REMARK ImmunoGraph fixture receptor placeholder',
+    `REMARK runId ${runId}`,
+    'REMARK sourceStatus FIXTURE',
+    'REMARK scientificUse false',
+    'ATOM      1  N   GLY A   1       0.000   0.000   0.000  0.00  0.00    +0.000 N',
+    'ATOM      2  CA  GLY A   1       1.250   0.100   0.000  0.00  0.00    +0.000 C',
+    'ATOM      3  C   GLY A   1       2.000   1.200   0.200  0.00  0.00    +0.000 C',
+    'TER',
+    '',
+  ].join('\n');
+}
+
+function fixtureLigandPdbqt(runId: string): string {
+  return [
+    'REMARK ImmunoGraph fixture ligand placeholder',
+    `REMARK runId ${runId}`,
+    'REMARK sourceStatus FIXTURE',
+    'REMARK scientificUse false',
+    'ROOT',
+    'ATOM      1  C1  LIG L   1       0.600   0.500   0.400  0.00  0.00    +0.000 C',
+    'ATOM      2  O1  LIG L   1       1.600   0.600   0.400  0.00  0.00    -0.200 O',
+    'ENDROOT',
+    'TORSDOF 0',
+    '',
+  ].join('\n');
+}
+
+function fixtureDockingOutputPdbqt(runId: string): string {
+  return [
+    'REMARK ImmunoGraph fixture docking output',
+    `REMARK runId ${runId}`,
+    'REMARK sourceStatus FIXTURE',
+    'REMARK scientificUse false',
+    'MODEL 1',
+    'REMARK VINA RESULT: -6.300 0.000 0.000',
+    'ATOM      1  C1  LIG L   1       0.700   0.500   0.400  0.00  0.00    +0.000 C',
+    'ATOM      2  O1  LIG L   1       1.700   0.700   0.500  0.00  0.00    -0.200 O',
+    'ENDMDL',
+    'MODEL 2',
+    'REMARK VINA RESULT: -6.100 0.500 0.800',
+    'ATOM      1  C1  LIG L   1       0.900   0.300   0.600  0.00  0.00    +0.000 C',
+    'ATOM      2  O1  LIG L   1       1.900   0.500   0.700  0.00  0.00    -0.200 O',
+    'ENDMDL',
+    '',
+  ].join('\n');
+}
+
+function fixtureDockingPoses(
+  runId: string,
+  selectedCandidates: ReadonlyArray<{ id: string }>,
+): Array<Record<string, unknown>> {
+  const candidateId = selectedCandidates[0]?.id ?? null;
+  return [1, 2, 3].map((rank) => ({
+    poseId: `${runId}-fixture-pose-${rank}`,
+    rank,
+    candidateId,
+    affinityKcalMol: -6.5 + rank * 0.2,
+    rmsdLowerBound: rank === 1 ? 0 : rank * 0.5,
+    rmsdUpperBound: rank === 1 ? 0 : rank * 0.8,
+    sourceStatus: 'FIXTURE',
+    scientificUse: false,
+  }));
+}
+
+function fixtureDockingSummary(
+  runId: string,
+  selectedCandidates: ReadonlyArray<{ id: string }>,
+): Record<string, unknown> {
+  return {
+    schemaVersion: 'immunograph-docking-summary.v1',
+    runId,
+    sourceStatus: 'FIXTURE',
+    scientificUse: false,
+    validationStatus: 'VERIFIED_FIXTURE',
+    disclaimer:
+      'Docking files in this package are deterministic fixture artifacts for workflow demonstration unless live docking provenance explicitly states otherwise.',
+    selectedCandidateIds: selectedCandidates.map((candidate) => candidate.id),
+    artifacts: [
+      'docking/receptor.pdbqt',
+      'docking/ligand.pdbqt',
+      'docking/docking-output.pdbqt',
+      'docking/docking-poses.json',
+      'docking/docking-view.png',
+    ],
+  };
+}
+
+function fixtureDockingProvenance(runId: string): Record<string, unknown> {
+  return {
+    connectorId: 'immunograph-fixture-docking',
+    connectorVersion: '1.0.0',
+    method: 'fixture-docking-artifact-generator',
+    methodVersion: '1.0.0',
+    runId,
+    status: 'FIXTURE',
+    predictionSource: 'FIXTURE',
+    scientificUse: false,
+    validationStatus: 'VERIFIED_FIXTURE',
+    parameters: {
+      receptor: 'docking/receptor.pdbqt',
+      ligand: 'docking/ligand.pdbqt',
+      output: 'docking/docking-output.pdbqt',
+      preview: 'docking/docking-view.png',
+    },
+  };
+}
+
+function createFixtureDockingPreviewPng(width = 640, height = 360): Buffer {
+  const channels = 4;
+  const rows = Buffer.alloc((width * channels + 1) * height);
+  for (let y = 0; y < height; y += 1) {
+    const rowOffset = y * (width * channels + 1);
+    rows[rowOffset] = 0;
+    for (let x = 0; x < width; x += 1) {
+      const offset = rowOffset + 1 + x * channels;
+      rows[offset] = 244;
+      rows[offset + 1] = 249;
+      rows[offset + 2] = 247;
+      rows[offset + 3] = 255;
+    }
+  }
+
+  drawRect(rows, width, height, 42, 42, 556, 276, [217, 231, 226, 255]);
+  drawLine(rows, width, height, 90, 278, 562, 278, [74, 100, 92, 255]);
+  drawLine(rows, width, height, 90, 278, 90, 78, [74, 100, 92, 255]);
+  drawLine(rows, width, height, 90, 278, 214, 182, [74, 100, 92, 255]);
+
+  for (let index = 0; index < 22; index += 1) {
+    const angle = index * 0.75;
+    const x = Math.round(280 + Math.cos(angle) * (96 + index * 3));
+    const y = Math.round(180 + Math.sin(angle) * (54 + index * 1.5));
+    drawCircle(rows, width, height, x, y, 16, [19, 94, 78, 220]);
+  }
+  drawCircle(rows, width, height, 354, 176, 18, [245, 158, 11, 255]);
+  drawCircle(rows, width, height, 386, 164, 12, [245, 158, 11, 255]);
+  drawCircle(rows, width, height, 414, 184, 10, [245, 158, 11, 255]);
+  drawLine(rows, width, height, 354, 176, 386, 164, [146, 64, 14, 255]);
+  drawLine(rows, width, height, 386, 164, 414, 184, [146, 64, 14, 255]);
+  drawRect(rows, width, height, 318, 118, 138, 112, [20, 184, 166, 130]);
+
+  return buildPng(width, height, rows);
+}
+
+function drawRect(
+  rows: Buffer,
+  width: number,
+  height: number,
+  left: number,
+  top: number,
+  rectWidth: number,
+  rectHeight: number,
+  color: readonly [number, number, number, number],
+): void {
+  for (let x = left; x < left + rectWidth; x += 1) {
+    setPixel(rows, width, height, x, top, color);
+    setPixel(rows, width, height, x, top + rectHeight, color);
+  }
+  for (let y = top; y < top + rectHeight; y += 1) {
+    setPixel(rows, width, height, left, y, color);
+    setPixel(rows, width, height, left + rectWidth, y, color);
+  }
+}
+
+function drawLine(
+  rows: Buffer,
+  width: number,
+  height: number,
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+  color: readonly [number, number, number, number],
+): void {
+  const dx = Math.abs(x1 - x0);
+  const sx = x0 < x1 ? 1 : -1;
+  const dy = -Math.abs(y1 - y0);
+  const sy = y0 < y1 ? 1 : -1;
+  let error = dx + dy;
+  let x = x0;
+  let y = y0;
+  while (true) {
+    setPixel(rows, width, height, x, y, color);
+    if (x === x1 && y === y1) break;
+    const doubled = 2 * error;
+    if (doubled >= dy) {
+      error += dy;
+      x += sx;
+    }
+    if (doubled <= dx) {
+      error += dx;
+      y += sy;
+    }
+  }
+}
+
+function drawCircle(
+  rows: Buffer,
+  width: number,
+  height: number,
+  centerX: number,
+  centerY: number,
+  radius: number,
+  color: readonly [number, number, number, number],
+): void {
+  const radiusSquared = radius * radius;
+  for (let y = centerY - radius; y <= centerY + radius; y += 1) {
+    for (let x = centerX - radius; x <= centerX + radius; x += 1) {
+      if ((x - centerX) ** 2 + (y - centerY) ** 2 <= radiusSquared) {
+        setPixel(rows, width, height, x, y, color);
+      }
+    }
+  }
+}
+
+function setPixel(
+  rows: Buffer,
+  width: number,
+  height: number,
+  x: number,
+  y: number,
+  color: readonly [number, number, number, number],
+): void {
+  if (x < 0 || y < 0 || x >= width || y >= height) return;
+  const offset = y * (width * 4 + 1) + 1 + x * 4;
+  const alpha = color[3] / 255;
+  rows[offset] = Math.round(color[0] * alpha + rows[offset]! * (1 - alpha));
+  rows[offset + 1] = Math.round(color[1] * alpha + rows[offset + 1]! * (1 - alpha));
+  rows[offset + 2] = Math.round(color[2] * alpha + rows[offset + 2]! * (1 - alpha));
+  rows[offset + 3] = 255;
+}
+
+function buildPng(width: number, height: number, rawRows: Buffer): Buffer {
+  const signature = Buffer.from('89504e470d0a1a0a', 'hex');
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 6;
+  ihdr[10] = 0;
+  ihdr[11] = 0;
+  ihdr[12] = 0;
+  return Buffer.concat([
+    signature,
+    pngChunk('IHDR', ihdr),
+    pngChunk('IDAT', deflateSync(rawRows)),
+    pngChunk('IEND', Buffer.alloc(0)),
+  ]);
+}
+
+function pngChunk(type: string, data: Buffer): Buffer {
+  const typeBytes = Buffer.from(type, 'ascii');
+  const length = Buffer.alloc(4);
+  length.writeUInt32BE(data.byteLength, 0);
+  const checksum = Buffer.alloc(4);
+  checksum.writeUInt32BE(crc32(Buffer.concat([typeBytes, data])), 0);
+  return Buffer.concat([length, typeBytes, data, checksum]);
+}
+
 function summaryMarkdown(
   run: Record<string, unknown>,
   rankedCandidates: readonly Record<string, unknown>[],
@@ -454,6 +735,22 @@ function arrayFrom(value: unknown): unknown[] {
 function sha256(data: Buffer): string {
   return createHash('sha256').update(data).digest('hex');
 }
+
+function crc32(data: Buffer): number {
+  let crc = 0xffffffff;
+  for (const byte of data) {
+    crc = (crc >>> 8) ^ CRC32_TABLE[(crc ^ byte) & 0xff]!;
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+const CRC32_TABLE = Array.from({ length: 256 }, (_, index) => {
+  let value = index;
+  for (let bit = 0; bit < 8; bit += 1) {
+    value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
+  }
+  return value >>> 0;
+});
 
 function iso(value: Date): string {
   return value.toISOString();

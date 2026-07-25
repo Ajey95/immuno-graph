@@ -15,7 +15,7 @@ This checklist mirrors [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md). Check a
 - `npm run connectors:check:mhcflurry`: passed against the local `.venv-mhcflurry` install.
 - `npm run connectors:check:iedb-population`: passed against the local IEDB official standalone population-coverage package.
 
-Implementation status summary: the offline fixture/synthetic path, REST API, MCP tools, MCP-visible PRD v1.1 agentic workflow descriptor, bounded LangGraph agent workflow, database repositories, core algorithms, project dashboard, workflow graph, evidence graph, candidate review, shortlist approval, diagnostics, JSON/CSV report artifacts, mandatory research-package ZIP export with checksums, evidence-graph/workflow-trace artifact exports, API liveness probe, API-owned `LIVE -> CACHED` reuse, IEDB MHC-I/MHC-II live adapters, optional local MHCflurry MHC-I adapter, official IEDB standalone population-coverage adapter, mixed-method hybrid routing, and mandatory fixture-safe structure/chemistry/docking MCP tool groups are implemented. Public deployment hardening, full browser/E2E rehearsal, and production live structure/chemistry/docking runtime adapters remain incomplete.
+Implementation status summary: the offline fixture/synthetic path, REST API, MCP tools, MCP-visible PRD v1.1 agentic workflow descriptor, bounded LangGraph agent workflow, database repositories, core algorithms, project dashboard, workflow graph, evidence graph, candidate review, shortlist approval, diagnostics, JSON/CSV report artifacts, mandatory research-package ZIP export with checksums, evidence-graph/workflow-trace artifact exports, fixture-labeled docking PDBQT/JSON/PNG package artifacts, API liveness probe, API-owned `LIVE -> CACHED` reuse, IEDB MHC-I/MHC-II live adapters, optional local MHCflurry MHC-I adapter, official IEDB standalone population-coverage adapter, mixed-method hybrid routing, and mandatory fixture-safe structure/chemistry/docking MCP tool groups are implemented. Public deployment hardening, full browser/E2E rehearsal, and production live structure/chemistry/docking runtime adapters remain incomplete.
 
 ## Phase 0 — Foundation
 
@@ -196,7 +196,7 @@ live cache, and never be presented as provider-produced, experimental, clinical,
 - [x] Implement local JSON synthetic-fixture report export.
 - [x] Implement local CSV synthetic-fixture candidate export.
 - [x] Implement workflow/evidence graph exports.
-- [x] Implement mandatory `research-package.zip` export with manifest, JSON/MD/CSV files, approvals, evidence graph, workflow trace, limitations, and checksums.
+- [x] Implement mandatory `research-package.zip` export with manifest, JSON/MD/CSV files, approvals, evidence graph, workflow trace, limitations, fixture docking PDBQT/JSON/PNG artifacts, and checksums.
 - [x] Embed fixture provenance, quality, and synthetic-data disclaimer in local report exports.
 - [ ] Implement deterministic report narrative.
 - [ ] Implement optional LLM provider interface.

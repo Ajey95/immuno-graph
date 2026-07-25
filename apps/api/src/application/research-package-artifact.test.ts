@@ -212,6 +212,13 @@ describe('createResearchPackageArtifact', () => {
         'construct/construct-optimization.json',
         'construct/construct.fasta',
         'construct/construct.json',
+        'docking/docking-output.pdbqt',
+        'docking/docking-poses.json',
+        'docking/docking-provenance.json',
+        'docking/docking-summary.json',
+        'docking/docking-view.png',
+        'docking/ligand.pdbqt',
+        'docking/receptor.pdbqt',
         'evidence/approvals.json',
         'evidence/audit-events.json',
         'evidence/evidence-graph.json',
@@ -235,12 +242,26 @@ describe('createResearchPackageArtifact', () => {
     );
     expect(entries.get('reports/report.csv')?.toString('utf8')).toContain('candidateId');
     expect(entries.get('candidates/candidates.csv')?.toString('utf8')).toContain('ACDEFGHIK');
+    expect(entries.get('docking/receptor.pdbqt')?.toString('utf8')).toContain('REMARK');
+    expect(entries.get('docking/ligand.pdbqt')?.toString('utf8')).toContain('ROOT');
+    expect(entries.get('docking/docking-output.pdbqt')?.toString('utf8')).toContain('MODEL 1');
+    expect(JSON.parse(entries.get('docking/docking-summary.json')!.toString('utf8'))).toMatchObject(
+      {
+        schemaVersion: 'immunograph-docking-summary.v1',
+        sourceStatus: 'FIXTURE',
+        scientificUse: false,
+      },
+    );
+    expect(entries.get('docking/docking-view.png')?.subarray(0, 8).toString('hex')).toBe(
+      '89504e470d0a1a0a',
+    );
     const checksums = JSON.parse(entries.get('checksums.json')!.toString('utf8')) as Record<
       string,
       string
     >;
     expect(checksums['manifest.json']).toMatch(/^[a-f0-9]{64}$/);
     expect(checksums['reports/report.csv']).toMatch(/^[a-f0-9]{64}$/);
+    expect(checksums['docking/docking-view.png']).toMatch(/^[a-f0-9]{64}$/);
     expect(artifactStore.writeBytes).toHaveBeenCalledWith(
       expect.stringContaining('research-package-'),
       expect.any(Buffer),

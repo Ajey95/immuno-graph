@@ -632,10 +632,13 @@ research-package.zip
 |   |-- descriptors.json
 |   `-- ligand-preparation.json
 |-- docking/
-|   |-- docking-runs.json
+|   |-- receptor.pdbqt
+|   |-- ligand.pdbqt
+|   |-- docking-output.pdbqt
 |   |-- docking-poses.json
-|   |-- docking-clusters.json
-|   `-- interactions.json
+|   |-- docking-summary.json
+|   |-- docking-provenance.json
+|   `-- docking-view.png
 |-- construct/
 |   |-- construct.fasta
 |   |-- construct.json
