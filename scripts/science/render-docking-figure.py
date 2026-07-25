@@ -1,8 +1,14 @@
 from __future__ import annotations
 
+import argparse
 import json
 import math
+import os
+import shlex
+import shutil
+import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -68,6 +74,186 @@ def parse_atoms(path: Path, only_protein: bool = False) -> list[Atom]:
     return atoms
 
 
+def distance(a: Atom, b: Atom) -> float:
+    return math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2 + (a.z - b.z) ** 2)
+
+
+def residue_key(atom: Atom) -> tuple[str, str, str]:
+    return atom.chain, atom.residue, atom.residue_id
+
+
+def nearby_residues(receptor: list[Atom], ligand: list[Atom], cutoff: float = 4.2) -> list[tuple[tuple[str, str, str], float]]:
+    best: dict[tuple[str, str, str], float] = {}
+    for atom in receptor:
+        min_distance = min(distance(atom, ligand_atom) for ligand_atom in ligand)
+        if min_distance <= cutoff:
+            key = residue_key(atom)
+            best[key] = min(best.get(key, min_distance), min_distance)
+    return sorted(best.items(), key=lambda item: item[1])[:10]
+
+
+def load_inputs(package_root: Path) -> tuple[Path, list[Path], list[Atom], list[list[Atom]]]:
+    receptor_path = package_root / "inputs" / "original-receptor.pdb"
+    receptor = parse_atoms(receptor_path, only_protein=True)
+    pose_paths = [package_root / "docking" / f"docked-ligand{i}.pdb" for i in range(1, 4)]
+    existing_pose_paths = [path for path in pose_paths if path.exists()]
+    ligands = [parse_atoms(path) for path in existing_pose_paths]
+    if not receptor or not ligands:
+        raise SystemExit("Missing receptor or docked ligand atoms")
+    return receptor_path, existing_pose_paths, receptor, ligands
+
+
+def render_with_pymol(package_root: Path, output: Path, receptor_path: Path, pose_paths: list[Path]) -> dict[str, object]:
+    pymol_command = os.environ.get("PYMOL_COMMAND", "pymol")
+    command_parts = shlex.split(pymol_command, posix=os.name != "nt")
+    executable = command_parts[0]
+    if shutil.which(executable) is None and not Path(executable).exists():
+        raise RuntimeError(f"PyMOL command not found: {executable}")
+
+    with tempfile.TemporaryDirectory(prefix="immunograph-pymol-") as temp_dir_name:
+        temp_dir = Path(temp_dir_name)
+        panel_manifest = temp_dir / "panels.json"
+        pymol_script = temp_dir / "render_panels.py"
+        panels = [
+            {
+                "label": label,
+                "ligand": str(path.resolve()),
+                "main": str((temp_dir / f"{label.lower()}_main.png").resolve()),
+                "inset": str((temp_dir / f"{label.lower()}_inset.png").resolve()),
+            }
+            for label, path in zip(["A", "B", "C"], pose_paths)
+        ]
+        panel_manifest.write_text(json.dumps(panels, indent=2), encoding="utf-8")
+        pymol_script.write_text(
+            f"""
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from pymol import cmd
+
+receptor_path = r'''{str(receptor_path.resolve())}'''
+panels = json.loads(Path(r'''{str(panel_manifest.resolve())}''').read_text())
+
+cmd.set('ray_opaque_background', 1)
+cmd.set('antialias', 2)
+cmd.set('orthoscopic', 1)
+cmd.set('depth_cue', 0)
+cmd.set('ambient', 0.45)
+cmd.set('spec_reflect', 0.25)
+cmd.set('cartoon_fancy_helices', 1)
+cmd.set('cartoon_smooth_loops', 1)
+cmd.set('stick_radius', 0.16)
+cmd.set('dash_width', 2.5)
+cmd.set('dash_gap', 0.22)
+cmd.set('dash_color', 'red')
+cmd.set('label_size', 18)
+cmd.set('label_color', 'forest')
+
+
+def style_ligand(selection: str) -> None:
+    cmd.show('sticks', selection)
+    cmd.color('yelloworange', f'{{selection}} and elem C')
+    cmd.color('blue', f'{{selection}} and elem N')
+    cmd.color('red', f'{{selection}} and elem O')
+    cmd.color('tv_yellow', f'{{selection}} and elem S')
+    cmd.color('green', f'{{selection}} and elem Cl')
+
+
+def render_panel(panel: dict[str, str]) -> None:
+    cmd.reinitialize()
+    cmd.bg_color('white')
+    cmd.load(receptor_path, 'receptor')
+    cmd.load(panel['ligand'], 'ligand')
+    cmd.remove('solvent')
+    cmd.hide('everything')
+    cmd.show('cartoon', 'receptor')
+    cmd.color('aquamarine', 'receptor')
+    cmd.set('cartoon_transparency', 0.08, 'receptor')
+    style_ligand('ligand')
+    cmd.select('pocket', 'byres (receptor within 4.2 of ligand)')
+    cmd.show('sticks', 'pocket')
+    cmd.color('forest', 'pocket and elem C')
+    cmd.color('blue', 'pocket and elem N')
+    cmd.color('red', 'pocket and elem O')
+    cmd.color('tv_yellow', 'pocket and elem S')
+    cmd.distance('polar_contacts', '(ligand and elem N+O+S)', '(pocket and elem N+O+S)', 3.6, mode=2)
+    cmd.hide('labels', 'polar_contacts')
+    cmd.color('red', 'polar_contacts')
+    cmd.orient('receptor or ligand')
+    cmd.zoom('receptor or ligand', 7)
+    cmd.png(panel['main'], width=560, height=390, dpi=220, ray=1)
+
+    cmd.hide('cartoon', 'receptor')
+    cmd.label('pocket and name CA', 'resn + resi')
+    cmd.zoom('ligand or pocket', 1.8)
+    cmd.png(panel['inset'], width=560, height=390, dpi=220, ray=1)
+
+
+for panel in panels:
+    render_panel(panel)
+cmd.quit()
+""",
+            encoding="utf-8",
+        )
+
+        completed = subprocess.run(
+            [*command_parts, "-cq", str(pymol_script)],
+            cwd=str(package_root),
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=180,
+            check=False,
+        )
+        if completed.returncode != 0:
+            raise RuntimeError(
+                "PyMOL rendering failed\n"
+                f"stdout:\n{completed.stdout[-2000:]}\n"
+                f"stderr:\n{completed.stderr[-2000:]}"
+            )
+
+        compose_pymol_panels(
+            panels=panels,
+            output=output,
+            title="ImmunoGraph actual docking visualization",
+            subtitle="RCSB 1UYD receptor + PubChem CID 2244 ligand; poses from AutoDock Vina; contacts from PyMOL geometry",
+        )
+        return {
+            "renderer": "pymol-headless",
+            "pymolCommand": pymol_command,
+            "renderedPanels": len(panels),
+        }
+
+
+def compose_pymol_panels(panels: list[dict[str, str]], output: Path, title: str, subtitle: str) -> None:
+    image = Image.new("RGB", (1240, 1540), (255, 255, 255))
+    draw = ImageDraw.Draw(image)
+    font, small_font = load_fonts()
+    draw.text((34, 18), title, fill=(12, 56, 48), font=font)
+    draw.text((34, 54), subtitle, fill=(70, 92, 88), font=small_font)
+    y_positions = [100, 565, 1030]
+    for panel, top in zip(panels, y_positions):
+        main = Image.open(panel["main"]).convert("RGB")
+        inset = Image.open(panel["inset"]).convert("RGB")
+        image.paste(main, (60, top + 35))
+        image.paste(inset, (640, top + 35))
+        draw.text((34, top), panel["label"], fill=(20, 20, 20), font=font)
+        draw.rectangle((630, top + 25, 1210, top + 435), outline=(45, 45, 45), width=2)
+        draw.rectangle((365, top + 205, 535, top + 355), outline=(45, 45, 45), width=2)
+        draw.line((535, top + 205, 630, top + 25), fill=(70, 70, 70), width=1)
+        draw.line((535, top + 355, 630, top + 435), fill=(70, 70, 70), width=1)
+    draw.text(
+        (34, 1495),
+        "Cartoon: receptor ribbon | Yellow: docked ligand | Green: nearby residues | Red dashed: inferred polar contacts",
+        fill=(60, 60, 60),
+        font=small_font,
+    )
+    output.parent.mkdir(parents=True, exist_ok=True)
+    image.save(output)
+
+
 def rotate(atom: Atom) -> tuple[float, float, float]:
     rz = math.radians(-35)
     rx = math.radians(18)
@@ -97,24 +283,6 @@ def project(atoms: list[Atom], box: tuple[int, int, int, int], pad: int = 24):
         return px, py, z
 
     return mapper
-
-
-def distance(a: Atom, b: Atom) -> float:
-    return math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2 + (a.z - b.z) ** 2)
-
-
-def residue_key(atom: Atom) -> tuple[str, str, str]:
-    return atom.chain, atom.residue, atom.residue_id
-
-
-def nearby_residues(receptor: list[Atom], ligand: list[Atom], cutoff: float = 4.2) -> list[tuple[tuple[str, str, str], float]]:
-    best: dict[tuple[str, str, str], float] = {}
-    for atom in receptor:
-        min_distance = min(distance(atom, ligand_atom) for ligand_atom in ligand)
-        if min_distance <= cutoff:
-            key = residue_key(atom)
-            best[key] = min(best.get(key, min_distance), min_distance)
-    return sorted(best.items(), key=lambda item: item[1])[:10]
 
 
 def infer_bonds(atoms: list[Atom]) -> list[tuple[Atom, Atom]]:
@@ -156,7 +324,27 @@ def draw_bonds(draw: ImageDraw.ImageDraw, atoms: list[Atom], mapper, color=(245,
         draw_atom(draw, (x, y), atom.element, scale=0.9)
 
 
-def draw_panel(
+def load_fonts():
+    candidates = [
+        ("arial.ttf", "arial.ttf"),
+        ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+        (
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        ),
+    ]
+    for title_path, body_path in candidates:
+        try:
+            return ImageFont.truetype(title_path, 28), ImageFont.truetype(body_path, 18)
+        except OSError:
+            continue
+    try:
+        return ImageFont.truetype("arial.ttf", 28), ImageFont.truetype("arial.ttf", 18)
+    except OSError:
+        return ImageFont.load_default(), ImageFont.load_default()
+
+
+def draw_coordinate_panel(
     draw: ImageDraw.ImageDraw,
     panel: tuple[int, int, int, int],
     label: str,
@@ -213,10 +401,9 @@ def draw_panel(
         bx, by, _ = zoom_mapper(ra)
         dashed_line(draw, (ax, ay), (bx, by), fill=(217, 58, 58), width=2)
         mx, my = (ax + bx) / 2, (ay + by) / 2
-        draw.text((mx + 3, my + 3), f"{d:.1f}Å", fill=(80, 30, 30), font=small_font)
+        draw.text((mx + 3, my + 3), f"{d:.1f} A", fill=(80, 30, 30), font=small_font)
 
-    label_positions = [(inset_box[0] + 10, inset_box[1] + 8)]
-    for idx, ((chain, residue, residue_id), min_distance) in enumerate(nearby_residues(receptor, ligand)[:8]):
+    for idx, ((chain, residue, residue_id), _min_distance) in enumerate(nearby_residues(receptor, ligand)[:8]):
         atoms = residue_groups.get((chain, residue, residue_id), [])
         if not atoms:
             continue
@@ -225,32 +412,14 @@ def draw_panel(
         text = f"{residue}{residue_id}"
         tx = inset_box[0] + 12 + (idx % 2) * 180
         ty = inset_box[1] + 12 + (idx // 2) * 24
-        label_positions.append((tx, ty))
         draw.line((px, py, tx, ty + 8), fill=(75, 75, 75), width=1)
         draw.text((tx, ty), text, fill=(20, 85, 48), font=small_font)
 
 
-def main() -> int:
-    if len(sys.argv) < 2:
-        print("usage: render-docking-figure.py <research-package-dir> [output.png]")
-        return 2
-    package_root = Path(sys.argv[1])
-    output = Path(sys.argv[2]) if len(sys.argv) > 2 else package_root / "docking" / "docking-view.png"
-    receptor_path = package_root / "inputs" / "original-receptor.pdb"
-    receptor = parse_atoms(receptor_path, only_protein=True)
-    pose_paths = [package_root / "docking" / f"docked-ligand{i}.pdb" for i in range(1, 4)]
-    ligands = [parse_atoms(path) for path in pose_paths if path.exists()]
-    if not receptor or not ligands:
-        raise SystemExit("Missing receptor or docked ligand atoms")
-
+def render_coordinate_projection(output: Path, receptor: list[Atom], ligands: list[list[Atom]]) -> dict[str, object]:
     image = Image.new("RGB", (1100, 1500), (255, 255, 255))
     draw = ImageDraw.Draw(image)
-    try:
-        font = ImageFont.truetype("arial.ttf", 28)
-        small_font = ImageFont.truetype("arial.ttf", 18)
-    except OSError:
-        font = ImageFont.load_default()
-        small_font = ImageFont.load_default()
+    font, small_font = load_fonts()
 
     draw.text((34, 18), "ImmunoGraph actual docking visualization", fill=(12, 56, 48), font=font)
     draw.text(
@@ -261,19 +430,70 @@ def main() -> int:
     )
     panels = [(25, 90, 1075, 545), (25, 550, 1075, 1005), (25, 1010, 1075, 1465)]
     for label, panel, ligand in zip(["A", "B", "C"], panels, ligands):
-        draw_panel(draw, panel, label, receptor, ligand, font, small_font)
-    draw.text((34, 1468), "Yellow: docked ligand pose · Green: nearby residues · Red dashed: inferred polar contacts", fill=(60, 60, 60), font=small_font)
+        draw_coordinate_panel(draw, panel, label, receptor, ligand, font, small_font)
+    draw.text(
+        (34, 1468),
+        "Yellow: docked ligand pose | Green: nearby residues | Red dashed: inferred polar contacts",
+        fill=(60, 60, 60),
+        font=small_font,
+    )
 
     output.parent.mkdir(parents=True, exist_ok=True)
     image.save(output)
+    return {
+        "renderer": "coordinate-projection-pillow",
+        "renderedPanels": min(3, len(ligands)),
+    }
+
+
+def write_metadata(output: Path, metadata: dict[str, object]) -> None:
+    output.parent.mkdir(parents=True, exist_ok=True)
+    (output.parent / "docking-view-metadata.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
+
+
+def parse_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Render an ImmunoGraph docking figure.")
+    parser.add_argument("package_root", type=Path, help="Path to research-package directory")
+    parser.add_argument("output", nargs="?", type=Path, help="Output PNG path")
+    parser.add_argument(
+        "--renderer",
+        choices=["auto", "pymol", "coordinate"],
+        default=os.environ.get("DOCKING_FIGURE_RENDERER", "auto"),
+        help="Renderer to use. auto prefers PyMOL and falls back to coordinate projection.",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(sys.argv[1:] if argv is None else argv)
+    package_root: Path = args.package_root
+    output: Path = args.output if args.output else package_root / "docking" / "docking-view.png"
+    receptor_path, pose_paths, receptor, ligands = load_inputs(package_root)
+
+    renderer_error: str | None = None
+    render_info: dict[str, object]
+    if args.renderer in {"auto", "pymol"}:
+        try:
+            render_info = render_with_pymol(package_root, output, receptor_path, pose_paths[:3])
+        except Exception as exc:
+            renderer_error = str(exc)
+            if args.renderer == "pymol":
+                raise
+            render_info = render_coordinate_projection(output, receptor, ligands)
+    else:
+        render_info = render_coordinate_projection(output, receptor, ligands)
+
     metadata = {
         "schemaVersion": "immunograph-docking-figure.v1",
-        "renderer": "coordinate-projection-pillow",
+        **render_info,
+        "preferredRenderer": "pymol-headless",
+        "fallbackRenderer": "coordinate-projection-pillow",
+        "rendererError": renderer_error,
         "receptorAtoms": len(receptor),
-        "ligandPoseCountRendered": len(ligands),
+        "ligandPoseCountRendered": min(3, len(ligands)),
         "output": str(output),
     }
-    (output.parent / "docking-view-metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
+    write_metadata(output, metadata)
     print(json.dumps(metadata, indent=2))
     return 0
 
