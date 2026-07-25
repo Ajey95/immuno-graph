@@ -10,6 +10,7 @@ import type {
   DuplicateCandidate,
   OverlapCandidate,
 } from '@immunograph/algorithms';
+import { loadReferenceBundle } from '@immunograph/database';
 import { ToolDecorator as Tool } from '@nitrostack/core';
 import type { ExecutionContext } from '@nitrostack/core';
 import { z } from 'zod';
@@ -22,7 +23,7 @@ import {
   sha256Schema,
   unitIntervalSchema,
 } from '../common/contracts.js';
-import { executeTool, ToolExecutionError } from '../common/executor.js';
+import { executeTool } from '../common/executor.js';
 
 const duplicateCandidate = z.object({
   id: identifierSchema,
@@ -174,6 +175,7 @@ const applyData = z.object({
 
 const fail = (name: string) => failureExample(name);
 const hash = 'a'.repeat(64);
+const referenceBundle = loadReferenceBundle();
 const baseExample = {
   candidateId: 'candidate-1',
   candidateType: 'MHCI' as const,
@@ -274,13 +276,16 @@ export class ConstraintController {
       inputSchema: thresholdsInput,
       dataSchema: thresholdsData,
       context,
-      operation: (value) => ({
-        ruleProfileVersion: value.ruleProfileVersion,
-        results: value.candidates.map(({ candidateId, ...candidate }) => ({
-          candidateId,
-          ...evaluateBaseHardConstraints(toBaseConstraint(candidate)),
-        })),
-      }),
+      operation: async (value) => {
+        const bundle = await referenceBundle;
+        return {
+          ruleProfileVersion: value.ruleProfileVersion,
+          results: value.candidates.map(({ candidateId, ...candidate }) => ({
+            candidateId,
+            ...evaluateBaseHardConstraints(toBaseConstraint(candidate, bundle.hlaRegistry.alleles)),
+          })),
+        };
+      },
     });
   }
 
@@ -318,25 +323,24 @@ export class ConstraintController {
       dataSchema: categorizeData,
       context,
       operation: (value) => {
-        if (new Set(value.candidates.map((candidate) => candidate.candidateType)).size > 1)
-          throw new ToolExecutionError(
-            'MIXED_TRACKS',
-            'SCIENTIFIC',
-            'Candidates must belong to one track.',
-          );
+        const tracks = [...new Set(value.candidates.map((candidate) => candidate.candidateType))];
         return {
-          candidates: rankCandidates(
-            value.candidates.map((candidate) => ({
-              ...candidate,
-              finalScore: candidate.preliminaryScore,
+          candidates: tracks.flatMap((track) =>
+            rankCandidates(
+              value.candidates
+                .filter((candidate) => candidate.candidateType === track)
+                .map((candidate) => ({
+                  ...candidate,
+                  finalScore: candidate.preliminaryScore,
+                })),
+              value.thresholds,
+            ).map((candidate) => ({
+              candidateId: candidate.candidateId,
+              category: candidate.category,
+              confidence: candidate.confidence,
+              blockingReviewCondition: candidate.blockingReviewCondition,
             })),
-            value.thresholds,
-          ).map((candidate) => ({
-            candidateId: candidate.candidateId,
-            category: candidate.category,
-            confidence: candidate.confidence,
-            blockingReviewCondition: candidate.blockingReviewCondition,
-          })),
+          ),
         };
       },
     });
@@ -366,10 +370,11 @@ export class ConstraintController {
       inputSchema: applyInput,
       dataSchema: applyData,
       context,
-      operation: (value) => {
+      operation: async (value) => {
+        const bundle = await referenceBundle;
         const constraintResults = value.baseConstraints.map(({ candidateId, ...candidate }) => ({
           candidateId,
-          ...evaluateBaseHardConstraints(toBaseConstraint(candidate)),
+          ...evaluateBaseHardConstraints(toBaseConstraint(candidate, bundle.hlaRegistry.alleles)),
         }));
         const duplicates = detectDuplicates(
           value.duplicateCandidates.map((candidate) =>
@@ -406,8 +411,29 @@ export class ConstraintController {
 
 type BaseConstraintWithoutId = Omit<z.infer<typeof baseConstraint>, 'candidateId'>;
 
-function toBaseConstraint(candidate: BaseConstraintWithoutId): BaseHardConstraintInput {
-  return { ...candidate, allele: candidate.allele } as BaseHardConstraintInput;
+function toBaseConstraint(
+  candidate: BaseConstraintWithoutId,
+  hlaAlleles: Array<{ allele: string; aliases?: string[] }>,
+): BaseHardConstraintInput {
+  const supportedAlleles =
+    candidate.supportedAlleles.length > 0
+      ? candidate.supportedAlleles
+      : inferSupportedAlleles(candidate.allele, hlaAlleles);
+  return { ...candidate, supportedAlleles, allele: candidate.allele } as BaseHardConstraintInput;
+}
+
+function inferSupportedAlleles(
+  allele: string | undefined,
+  hlaAlleles: Array<{ allele: string; aliases?: string[] }>,
+): string[] {
+  if (allele === undefined || allele.trim().length === 0) return [];
+  const normalized = allele.trim().toLowerCase();
+  const match = hlaAlleles.find(
+    (entry) =>
+      entry.allele.toLowerCase() === normalized ||
+      (entry.aliases ?? []).some((alias) => alias.toLowerCase() === normalized),
+  );
+  return match === undefined ? [] : [match.allele, ...(match.aliases ?? [])];
 }
 
 function toDuplicateCandidate(

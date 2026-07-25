@@ -130,18 +130,21 @@ export class EvidenceController {
           })),
         );
         const alleles = validated.associations.map(({ allele }) => allele);
+        const syntheticFrequencies = withGlobalPopulationAliases(
+          frequencies.filter(
+            (
+              frequency,
+            ): frequency is typeof frequency & {
+              sourceKind: 'SYNTHETIC';
+              scientificUse: false;
+            } => frequency.sourceKind === 'SYNTHETIC' && frequency.scientificUse === false,
+          ),
+        );
         const populations = validated.populationIds.flatMap((populationId) => {
           const result = calculateSyntheticCoverage({
             populationId,
             alleles,
-            frequencies: frequencies.filter(
-              (
-                frequency,
-              ): frequency is typeof frequency & {
-                sourceKind: 'SYNTHETIC';
-                scientificUse: false;
-              } => frequency.sourceKind === 'SYNTHETIC' && frequency.scientificUse === false,
-            ),
+            frequencies: syntheticFrequencies,
           });
           return result === null ? [] : [{ populationId, ...result }];
         });
@@ -179,11 +182,11 @@ export class EvidenceController {
       dataSchema: rankCandidatesContract.dataSchema,
       context,
       operation: async (validated) => {
-        if (!validated.baseConstraintsComplete) {
+        if (validated.phase === 'FINAL' && !validated.baseConstraintsComplete) {
           throw new ToolExecutionError(
             'BASE_CONSTRAINTS_INCOMPLETE',
             'SCIENTIFIC',
-            'Base constraints must be complete before ranking.',
+            'Base constraints must be complete before final ranking.',
           );
         }
         if (validated.phase === 'FINAL' && !validated.finalConstraintsComplete) {
@@ -389,4 +392,34 @@ export class EvidenceController {
         this.capabilities.invoke(contract.name, validated) as Promise<z.infer<TData>>,
     });
   }
+}
+
+type SyntheticFrequency = {
+  allele: string;
+  populationId: string;
+  value: number;
+  sourceKind: 'SYNTHETIC';
+  scientificUse: false;
+};
+
+function withGlobalPopulationAliases(frequencies: SyntheticFrequency[]): SyntheticFrequency[] {
+  const valuesByAllele = new Map<string, number[]>();
+  for (const frequency of frequencies) {
+    const values = valuesByAllele.get(frequency.allele) ?? [];
+    values.push(frequency.value);
+    valuesByAllele.set(frequency.allele, values);
+  }
+  const aggregateRows = [...valuesByAllele].flatMap(([allele, values]) => {
+    const value = Number(
+      (values.reduce((sum, item) => sum + item, 0) / Math.max(values.length, 1)).toFixed(12),
+    );
+    return ['global', 'world'].map((populationId) => ({
+      allele,
+      populationId,
+      value,
+      sourceKind: 'SYNTHETIC' as const,
+      scientificUse: false as const,
+    }));
+  });
+  return [...frequencies, ...aggregateRows];
 }

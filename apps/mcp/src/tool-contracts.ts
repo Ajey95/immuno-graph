@@ -16,6 +16,32 @@ const positiveInteger = z.number().int().positive();
 const nonnegativeInteger = z.number().int().nonnegative();
 const nonemptyStrings = z.array(identifierSchema).min(1);
 const jsonRecord = z.record(z.unknown());
+type FallbackPolicy = z.infer<typeof fallbackPolicySchema>;
+type PredictorInput = {
+  runId: string;
+  proteinRef?: string;
+  sequence?: string;
+  alleles: string[];
+  peptideLengths: number[];
+  methods: string[];
+  fallbackPolicy: FallbackPolicy;
+};
+type ValidateSequenceInput = { fasta: string; profileVersion: string };
+type GeneratePeptidesInput = {
+  runId: string;
+  sequence: string;
+  sequenceHash?: string;
+  candidateType: 'MHCI' | 'MHCII';
+  peptideLengths: number[];
+};
+type CoverageInput = {
+  runId: string;
+  associations: Array<{ candidateId: string; peptide?: string; allele: string }>;
+  populationIds: string[];
+  classMode: 'CLASS_I' | 'CLASS_II' | 'COMBINED';
+  fallbackPolicy: FallbackPolicy;
+};
+type SyntheticCoverageInput = Omit<CoverageInput, 'fallbackPolicy'>;
 
 export const generatedCandidateSchema = z.object({
   candidateType: z.enum(['MHCI', 'MHCII']),
@@ -141,6 +167,11 @@ export function defineContract<TInput extends z.ZodTypeAny, TData extends z.ZodT
 }
 
 export function toolOptions(contract: ToolContract, category: string): ToolOptions {
+  // Public MCP clients such as Claude can reject tools marked as task-support
+  // "required" unless their host provides NitroStack task augmentation. The
+  // tools are still fully validated and idempotent; expose them as optional so
+  // external clients can call them directly during deployed MCP demos.
+  const taskSupport = contract.taskSupport === 'required' ? 'optional' : contract.taskSupport;
   return {
     name: contract.name,
     description: contract.description,
@@ -152,26 +183,47 @@ export function toolOptions(contract: ToolContract, category: string): ToolOptio
     examples: { request: contract.exampleInput, response: failureExample(contract.name) },
     metadata: { category, tags: ['immunograph', 'deterministic', 'mvp-v1'] },
     annotations: { readOnlyHint: true, idempotentHint: true },
-    taskSupport: contract.taskSupport ?? 'forbidden',
+    taskSupport: taskSupport ?? 'forbidden',
   };
 }
 
-const predictorInput = z
-  .object({
-    runId: identifierSchema,
-    proteinRef: identifierSchema,
-    sequence: identifierSchema.optional(),
-    alleles: nonemptyStrings,
-    peptideLengths: z.array(positiveInteger).min(1),
-    methods: nonemptyStrings,
-    fallbackPolicy: fallbackPolicySchema,
-  })
-  .strict();
+const predictorInput = z.preprocess(
+  (raw) => {
+    if (typeof raw !== 'object' || raw === null) return raw;
+    const value = { ...(raw as Record<string, unknown>) };
+    if (value.peptideLengths === undefined && value.lengths !== undefined) {
+      value.peptideLengths = value.lengths;
+    }
+    delete value.lengths;
+    return value;
+  },
+  z
+    .object({
+      runId: identifierSchema.default('interactive-run'),
+      proteinRef: identifierSchema.optional(),
+      sequence: identifierSchema.optional(),
+      alleles: nonemptyStrings,
+      peptideLengths: z.array(positiveInteger).min(1),
+      methods: nonemptyStrings.default(['iedb-recommended']),
+      fallbackPolicy: fallbackPolicySchema.default('LIVE_THEN_CACHE_THEN_FIXTURE'),
+    })
+    .strict(),
+) as z.ZodType<PredictorInput>;
 
 export const validateSequenceContract = defineContract({
   name: 'validate_sequence',
   description: 'Validate and normalize one protein FASTA record.',
-  inputSchema: z.object({ fasta: z.string(), profileVersion: identifierSchema }).strict(),
+  inputSchema: z.preprocess(
+    (raw) => {
+      if (typeof raw !== 'object' || raw === null) return raw;
+      const value = { ...(raw as Record<string, unknown>) };
+      if (value.fasta === undefined && value.sequence !== undefined) value.fasta = value.sequence;
+      if (value.profileVersion === undefined) value.profileVersion = 'mvp-v1.0';
+      delete value.sequence;
+      return value;
+    },
+    z.object({ fasta: z.string(), profileVersion: identifierSchema }).strict(),
+  ) as z.ZodType<ValidateSequenceInput>,
   dataSchema: z.object({
     normalizedSequence: identifierSchema,
     header: z.string(),
@@ -185,15 +237,27 @@ export const validateSequenceContract = defineContract({
 export const generatePeptidesContract = defineContract({
   name: 'generate_candidate_peptides',
   description: 'Generate stable one-based T-cell peptide windows.',
-  inputSchema: z
-    .object({
-      runId: identifierSchema,
-      sequence: identifierSchema,
-      sequenceHash: sha256Schema,
-      candidateType: z.enum(['MHCI', 'MHCII']),
-      peptideLengths: z.array(positiveInteger).min(1),
-    })
-    .strict(),
+  inputSchema: z.preprocess(
+    (raw) => {
+      if (typeof raw !== 'object' || raw === null) return raw;
+      const value = { ...(raw as Record<string, unknown>) };
+      if (value.peptideLengths === undefined && value.lengths !== undefined) {
+        value.peptideLengths = value.lengths;
+      }
+      delete value.lengths;
+      delete value.overlapping;
+      return value;
+    },
+    z
+      .object({
+        runId: identifierSchema.default('interactive-run'),
+        sequence: identifierSchema,
+        sequenceHash: sha256Schema.optional(),
+        candidateType: z.enum(['MHCI', 'MHCII']),
+        peptideLengths: z.array(positiveInteger).min(1),
+      })
+      .strict(),
+  ) as z.ZodType<GeneratePeptidesInput>,
   dataSchema: z.object({ candidates: z.array(generatedCandidateSchema) }),
   exampleInput: {
     runId: 'run-1',
@@ -473,23 +537,34 @@ export const populationCoverageContract = defineContract({
   name: 'calculate_population_coverage',
   description:
     'Calculate population coverage using a configured authoritative service or exact fixture.',
-  inputSchema: z
-    .object({
-      runId: identifierSchema,
-      associations: z
-        .array(
-          z.object({
-            candidateId: identifierSchema,
-            peptide: identifierSchema.optional(),
-            allele: identifierSchema,
-          }),
-        )
-        .min(1),
-      populationIds: nonemptyStrings,
-      classMode: z.enum(['CLASS_I', 'CLASS_II', 'COMBINED']),
-      fallbackPolicy: fallbackPolicySchema,
-    })
-    .strict(),
+  inputSchema: z.preprocess(
+    (raw) => {
+      if (typeof raw !== 'object' || raw === null) return raw;
+      const value = { ...(raw as Record<string, unknown>) };
+      if (value.populationIds === undefined && value.populations !== undefined) {
+        value.populationIds = value.populations;
+      }
+      delete value.populations;
+      return value;
+    },
+    z
+      .object({
+        runId: identifierSchema.default('interactive-run'),
+        associations: z
+          .array(
+            z.object({
+              candidateId: identifierSchema,
+              peptide: identifierSchema.optional(),
+              allele: identifierSchema,
+            }),
+          )
+          .min(1),
+        populationIds: nonemptyStrings,
+        classMode: z.enum(['CLASS_I', 'CLASS_II', 'COMBINED']).default('COMBINED'),
+        fallbackPolicy: fallbackPolicySchema.default('LIVE_THEN_CACHE_THEN_FIXTURE'),
+      })
+      .strict(),
+  ) as z.ZodType<CoverageInput>,
   dataSchema: z.object({
     projectedCoverage: unitIntervalSchema,
     metrics: jsonRecord,
@@ -509,22 +584,33 @@ export const syntheticPopulationCoverageContract = defineContract({
   name: 'calculate_synthetic_population_coverage',
   description:
     'Calculate deterministic demonstration coverage from explicitly synthetic HLA frequencies.',
-  inputSchema: z
-    .object({
-      runId: identifierSchema,
-      associations: z
-        .array(
-          z.object({
-            candidateId: identifierSchema,
-            peptide: identifierSchema.optional(),
-            allele: identifierSchema,
-          }),
-        )
-        .min(1),
-      populationIds: nonemptyStrings,
-      classMode: z.enum(['CLASS_I', 'CLASS_II', 'COMBINED']),
-    })
-    .strict(),
+  inputSchema: z.preprocess(
+    (raw) => {
+      if (typeof raw !== 'object' || raw === null) return raw;
+      const value = { ...(raw as Record<string, unknown>) };
+      if (value.populationIds === undefined && value.populations !== undefined) {
+        value.populationIds = value.populations;
+      }
+      delete value.populations;
+      return value;
+    },
+    z
+      .object({
+        runId: identifierSchema.default('interactive-run'),
+        associations: z
+          .array(
+            z.object({
+              candidateId: identifierSchema,
+              peptide: identifierSchema.optional(),
+              allele: identifierSchema,
+            }),
+          )
+          .min(1),
+        populationIds: nonemptyStrings,
+        classMode: z.enum(['CLASS_I', 'CLASS_II', 'COMBINED']).default('COMBINED'),
+      })
+      .strict(),
+  ) as z.ZodType<SyntheticCoverageInput>,
   dataSchema: z.object({
     populations: z.array(
       z.object({

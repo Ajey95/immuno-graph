@@ -9,6 +9,7 @@ import {
 import { loadReferenceBundle } from '@immunograph/database';
 import { ControllerDecorator, ToolDecorator } from '@nitrostack/core';
 import type { ExecutionContext } from '@nitrostack/core';
+import { createHash } from 'node:crypto';
 import type { z } from 'zod';
 
 import type { CapabilityPort } from '../common/capability-port.js';
@@ -210,9 +211,27 @@ export class PredictionController {
       dataSchema: contract.dataSchema,
       context,
       operation: async (validated) =>
-        this.capabilities.invoke(contract.name, validated) as Promise<z.infer<TData>>,
+        this.capabilities.invoke(contract.name, withDerivedProteinRef(validated)) as Promise<
+          z.infer<TData>
+        >,
     });
   }
+}
+
+function withDerivedProteinRef<T>(input: T): T {
+  if (
+    typeof input !== 'object' ||
+    input === null ||
+    !('sequence' in input) ||
+    typeof input.sequence !== 'string' ||
+    ('proteinRef' in input && typeof input.proteinRef === 'string' && input.proteinRef.length > 0)
+  ) {
+    return input;
+  }
+  return {
+    ...input,
+    proteinRef: createHash('sha256').update(input.sequence).digest('hex'),
+  };
 }
 
 // Keep NitroStack's default module composition free of constructor dependencies.

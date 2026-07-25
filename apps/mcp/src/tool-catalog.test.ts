@@ -160,6 +160,111 @@ describe('MCP tool catalog', () => {
     }
   });
 
+  it('accepts external MCP-friendly input aliases for sequence validation and peptide lengths', async () => {
+    const validateResult = await toolByName('validate_sequence').execute(
+      { sequence: '>HA_spike\nMNTQILVQRMYSDFHFKTQGKEVLATVYAAQSE' },
+      createContext(),
+    );
+    expect(validateResult).toMatchObject({
+      ok: true,
+      data: { normalizedSequence: 'MNTQILVQRMYSDFHFKTQGKEVLATVYAAQSE', sequenceLength: 33 },
+    });
+
+    const peptideResult = await toolByName('generate_candidate_peptides').execute(
+      {
+        sequence: 'MNTQILVQRMYSDFHFKTQGKEVLATVYAAQSE',
+        candidateType: 'MHCI',
+        lengths: [9, 10],
+        overlapping: true,
+      },
+      createContext(),
+    );
+    expect(peptideResult).toMatchObject({ ok: true });
+    if (typeof peptideResult === 'object' && peptideResult !== null && 'data' in peptideResult) {
+      expect((peptideResult.data as { candidates: unknown[] }).candidates).toHaveLength(49);
+    }
+  });
+
+  it('infers supported HLA alleles from reference data when MCP clients omit the list', async () => {
+    const result = await toolByName('validate_thresholds').execute(
+      {
+        runId: 'claude-demo-run',
+        ruleProfileVersion: 'mvp-v1.0',
+        candidates: [
+          {
+            candidateId: 'candidate-with-reference-allele',
+            candidateType: 'MHCI',
+            peptideLength: 9,
+            supportedAlleles: [],
+            allele: 'HLA-A*02:01',
+            allowedLengths: { MHCI: [9], MHCII: [15] },
+            requiredEvidenceRefs: ['obs-1'],
+            presentEvidenceRefs: ['obs-1'],
+            bindingObservations: [{ evidenceRef: 'obs-1', percentileRank: 0.5, required: true }],
+            bindingPercentileRankMaximum: 2,
+          },
+        ],
+      },
+      createContext(),
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: {
+        results: [
+          {
+            candidateId: 'candidate-with-reference-allele',
+            passesAllHardConstraints: true,
+          },
+        ],
+      },
+    });
+  });
+
+  it('categorizes mixed-track MCP batches by track instead of forcing clients to split them', async () => {
+    const result = await toolByName('categorize_candidates').execute(
+      {
+        runId: 'claude-demo-run',
+        thresholds: { recommendedMinimum: 0.75, reviewMinimum: 0.5 },
+        candidates: [
+          {
+            candidateId: 'mhci-1',
+            candidateKey: 'mhci-key',
+            candidateType: 'MHCI',
+            preliminaryScore: 0.82,
+            agreement: 0.9,
+            completeness: 1,
+            start: 1,
+            blockingReviewCondition: false,
+            ruleOutcomes: [],
+          },
+          {
+            candidateId: 'mhcii-1',
+            candidateKey: 'mhcii-key',
+            candidateType: 'MHCII',
+            preliminaryScore: 0.81,
+            agreement: 0.9,
+            completeness: 1,
+            start: 1,
+            blockingReviewCondition: false,
+            ruleOutcomes: [],
+          },
+        ],
+      },
+      createContext(),
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: {
+        candidates: [
+          { candidateId: 'mhci-1', category: 'RECOMMENDED' },
+          { candidateId: 'mhcii-1', category: 'RECOMMENDED' },
+        ],
+      },
+    });
+  });
+
   it('maps scientific validation failures to stable documented error codes', async () => {
     const empty = await toolByName('validate_sequence').execute(
       { fasta: '', profileVersion: 'mvp-v1.0' },
@@ -214,6 +319,15 @@ describe('MCP tool catalog', () => {
       data: { phase: 'PRELIMINARY', candidates: [{ finalScore: 0.8 }] },
     });
 
+    const unconstrainedPreliminary = await toolByName('rank_candidates').execute(
+      { ...base, phase: 'PRELIMINARY', baseConstraintsComplete: false },
+      createContext(),
+    );
+    expect(unconstrainedPreliminary).toMatchObject({
+      ok: true,
+      data: { phase: 'PRELIMINARY', candidates: [{ finalScore: 0.8 }] },
+    });
+
     const final = await toolByName('rank_candidates').execute(
       { ...base, phase: 'FINAL' },
       createContext(),
@@ -223,6 +337,32 @@ describe('MCP tool catalog', () => {
       data: {
         phase: 'FINAL',
         candidates: [{ finalScore: 0.8, category: 'RECOMMENDED', trackRank: 1 }],
+      },
+    });
+  });
+
+  it('supports global and world aliases for synthetic population coverage', async () => {
+    const result = await toolByName('calculate_synthetic_population_coverage').execute(
+      {
+        runId: 'claude-demo-run',
+        associations: [
+          { candidateId: 'candidate-1', allele: 'HLA-A*02:01' },
+          { candidateId: 'candidate-2', allele: 'HLA-B*07:02' },
+        ],
+        populations: ['global', 'world'],
+        classMode: 'CLASS_I',
+      },
+      createContext(),
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: {
+        populations: [
+          { populationId: 'global', projectedCoverage: expect.any(Number) },
+          { populationId: 'world', projectedCoverage: expect.any(Number) },
+        ],
+        unavailablePopulationIds: [],
       },
     });
   });
