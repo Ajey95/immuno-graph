@@ -19,9 +19,9 @@ This checklist mirrors [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md). Check a
 - `npm run db:migrate`: passed against a clean temporary SQLite database. The default `packages/database/prisma/immunograph.db` was locked during one verification attempt, which usually means a local API/dev process or SQLite handle was still open.
 - `npm run connectors:check:iedb`: passed against the live IEDB MHC-I tools API.
 - `npm run connectors:check:mhcflurry`: passed against the local `.venv-mhcflurry` install.
-- `npm run connectors:check:iedb-population`: available after installing IEDB's official standalone population-coverage package.
+- `npm run connectors:check:iedb-population`: passed against the local IEDB official standalone population-coverage package.
 
-Implementation status summary: the offline fixture/synthetic path, REST API, MCP tools, database repositories, core algorithms, project dashboard, workflow graph, evidence graph, candidate review, shortlist approval, diagnostics, JSON/CSV report artifacts, evidence-graph/workflow-trace artifact exports, API liveness probe, API-owned `LIVE -> CACHED` reuse, IEDB MHC-I/MHC-II live adapters, optional local MHCflurry MHC-I adapter, official IEDB standalone population-coverage adapter, and mixed-method hybrid routing are implemented. Public deployment hardening and full browser/E2E rehearsal remain incomplete.
+Implementation status summary: the offline fixture/synthetic path, REST API, MCP tools, MCP-visible PRD v1.1 agentic workflow descriptor, bounded LangGraph agent workflow, database repositories, core algorithms, project dashboard, workflow graph, evidence graph, candidate review, shortlist approval, diagnostics, JSON/CSV report artifacts, mandatory research-package ZIP export with checksums, evidence-graph/workflow-trace artifact exports, fixture-labeled docking PDBQT/JSON/PNG package artifacts, API liveness probe, API-owned `LIVE -> CACHED` reuse, IEDB MHC-I/MHC-II live adapters, optional local MHCflurry MHC-I adapter, official IEDB standalone population-coverage adapter, mixed-method hybrid routing, and live-capable RCSB/AlphaFold/PubChem/Open Babel/RDKit/Vina/PLIP/fpocket/FreeSASA/Mol* MCP adapters are implemented. Public deployment hardening and full browser/E2E rehearsal remain incomplete.
 
 ## Phase 0 — Foundation
 
@@ -33,7 +33,7 @@ Implementation status summary: the offline fixture/synthetic path, REST API, MCP
 - [x] Scaffold React/Vite web app.
 - [x] Configure Tailwind CSS and shadcn/ui.
 - [x] Scaffold Fastify API with Zod environment validation and Pino-backed logging, without routes.
-- [x] Scaffold one NitroStack `apps/mcp` server with four empty capability modules.
+- [x] Scaffold one NitroStack `apps/mcp` server with modular MCP capability groups.
 - [x] Scaffold Prisma/SQLite package without database models.
 - [x] Add root build/typecheck/lint/test scripts.
 - [x] Add `.env.example` and startup environment validation.
@@ -103,14 +103,21 @@ live cache, and never be presented as provider-produced, experimental, clinical,
 
 ## Phase 4 — MCP
 
-- [x] Implement Prediction tool contracts in `immunograph-mcp`; connector execution remains behind capability ports.
+- [x] Implement Immunoinformatics tool contracts in `immunograph-mcp`; connector execution remains behind capability ports.
 - [x] Implement Evidence tool contracts in `immunograph-mcp`; external coverage execution remains behind a capability port.
 - [x] Implement Constraint tools in `immunograph-mcp` using shared deterministic algorithms.
 - [x] Implement Report tool contracts in `immunograph-mcp`; artifact I/O remains behind a capability port.
-- [x] Register all four capability modules in one NitroStack server process.
+- [x] Implement Structure tools: RCSB/AlphaFold fetch, validate, epitope mapping, FreeSASA accessibility, confidence, fpocket pockets, and Mol* view-state.
+- [x] Implement Chemistry tools: PubChem fetch, validate, deduplicate, RDKit descriptors, and Open Babel ligand preparation.
+- [x] Implement Docking tools: Open Babel receptor preparation, docking-box validation, AutoDock Vina execution, pose clustering, PLIP interaction extraction, and Mol* view-state.
+- [x] Register all seven capability modules in one NitroStack server process.
 - [x] Add common tool envelopes, deterministic hashes, structured logging, and error mapping.
 - [x] Add task progress/cancellation checks to tool execution, including long prediction tools.
 - [x] Embed schema-validated example calls for every tool for NitroStudio discovery.
+- [x] Expose the internal agent/orchestrator model through the read-only `describe_agentic_workflow` MCP tool.
+- [x] Implement bounded LangGraph workflow execution through `run_agentic_workflow`.
+- [x] Implement grounded researcher chat contract through `chat_with_research_agent`.
+- [x] Implement MCP research-package export contract through `export_research_package`.
 - [x] Add MCP discovery, schema, deterministic execution, fallback, and logging contract tests.
 
 ## Phase 5 — Workflow and API
@@ -141,6 +148,7 @@ live cache, and never be presented as provider-produced, experimental, clinical,
 - [x] Expose safe fixture-manifest and application-build diagnostic contracts.
 - [x] Implement persisted, resumable SSE event replay and paginated history endpoint.
 - [x] Implement report, artifact-list, and safe artifact-download endpoints.
+- [x] Implement API delegation endpoints for `POST /runs/:runId/agent-workflow` and `POST /runs/:runId/chat`.
 - [x] Add REST integration tests, error envelopes, structured logging, and Zod validation.
 - [x] Add database-backed API application-service integration tests.
 
@@ -158,11 +166,16 @@ live cache, and never be presented as provider-produced, experimental, clinical,
 - [ ] Install and verify MHCflurry CLI/models in the production deployment runtime before enabling `MHCFLURRY_ENABLED=true` there.
 - [x] Add official IEDB standalone population-coverage connector behind `IEDB_POPULATION_COVERAGE_ENABLED`.
 - [x] Add repeatable `npm run connectors:install:iedb-population` and `npm run connectors:check:iedb-population` commands.
-- [ ] Verify IEDB population coverage package installation in the production deployment runtime.
+- [x] Verify IEDB population coverage package installation in the production Docker runtime.
 - [ ] Register score profiles for each enabled method/version.
 - [x] Add parser samples and tests.
 - [x] Verify `LIVE -> CACHED` behavior.
 - [x] Verify each fallback reason and status display.
+- [x] Implement production live structure retrieval adapters for RCSB PDB and AlphaFold DB.
+- [x] Implement production live chemistry adapters for PubChem, Open Babel, and RDKit.
+- [x] Implement production live docking adapters for AutoDock Vina, PLIP, fpocket, FreeSASA, and Mol* view-state.
+- [x] Verify MCP Docker image build with the production science runtime installed locally.
+- [ ] Rehearse the same image on NitroStack Cloud once cloud deployment credentials are available.
 
 ## Phase 7 — UI
 
@@ -191,6 +204,7 @@ live cache, and never be presented as provider-produced, experimental, clinical,
 - [x] Implement local JSON synthetic-fixture report export.
 - [x] Implement local CSV synthetic-fixture candidate export.
 - [x] Implement workflow/evidence graph exports.
+- [x] Implement mandatory `research-package.zip` export with manifest, JSON/MD/CSV files, approvals, evidence graph, workflow trace, limitations, fixture docking PDBQT/JSON/PNG artifacts, and checksums.
 - [x] Embed fixture provenance, quality, and synthetic-data disclaimer in local report exports.
 - [ ] Implement deterministic report narrative.
 - [ ] Implement optional LLM provider interface.

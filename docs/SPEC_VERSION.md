@@ -243,7 +243,7 @@ Definitions:
 
 ### 0.3.0-draft — 2026-07-24
 
-- Consolidated four proposed MCP servers into one NitroStack MCP server with four capability modules.
+- Consolidated the proposed MCP servers into one NitroStack MCP app with internal capability groups and a unified tool catalog.
 - Restricted GraphBepi to exact-match fixtures for the MVP.
 - Deferred conservation and all dependent contracts to Product Phase 2 (post-MVP).
 - Replaced the conservation component with completeness, left exact weights pending explicit approval, and clarified singleton versus shortlist population coverage.

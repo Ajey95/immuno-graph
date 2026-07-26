@@ -4,18 +4,42 @@
 
 ImmunoGraph exposes one NitroStack MCP server: `immunograph-mcp`.
 
-The server contains four internal capability modules:
+The server contains seven internal capability modules:
 
-1. Prediction tools
+1. Immunoinformatics tools
 2. Evidence tools
 3. Constraint tools
-4. Report tools
+4. Structure tools
+5. Chemistry tools
+6. Docking tools
+7. Report / export tools
 
 These modules are code and contract boundaries, not independently deployed MCP servers. They share one server lifecycle, common envelopes, correlation context, and capability registry. Agent permissions are enforced with tool-level allowlists.
 
 All tools use Zod input validation, return typed JSON, log through the execution context, and attach correlation metadata. Long-running predictor operations use NitroStack task support where the installed SDK version permits it.
 
 MCP is a capability boundary. It does not own UI navigation or REST lifecycle transitions.
+
+The mandatory PRD v1.1 agentic architecture is implemented inside the same NitroStack MCP server.
+NitroStack Cloud still sees one deployable app, while internal agents are represented as bounded
+LangGraph nodes that may select only typed ImmunoGraph tools.
+
+```text
+One ImmunoGraph MCP App
+  |-- LangGraph Agent Workflow
+  |-- Immunoinformatics Tools
+  |-- Evidence Tools
+  |-- Constraint Tools
+  |-- Structure Tools
+  |-- Chemistry Tools
+  |-- Docking Tools
+  `-- Report / Export Tools
+```
+
+LLM-backed agent mode is allowed only for planning, routing, summarization, and grounded
+explanation. LLM output is never accepted as scientific evidence unless it is validated against
+typed MCP tool outputs. When an LLM provider is absent, the same graph runs with deterministic
+agent routing and explicit provenance.
 
 ## 2. Common envelopes
 
@@ -180,6 +204,18 @@ Uses only the explicitly synthetic HLA frequency dataset. It is deterministic an
 **Output:** deterministic ordered selection steps, marginal gains, cumulative coverage, and final set-level coverage with provenance.  
 **Rule:** runs only after final individual ranking, rejects B-cell candidates, and uses the stable tie-break order in `ALGORITHM_SPEC.md`.
 
+### `optimize_construct_genetic`
+
+**Input:** ranked candidate summaries, track, construct constraints, and genetic-optimization controls.  
+**Output:** deterministic construct candidate, selected epitopes, coverage/redundancy metrics, manufacturability warnings, and provenance.  
+**Rule:** this is a deterministic optimization algorithm, not a biological safety or efficacy claim.
+
+### `calibrate_confidence`
+
+**Input:** score, evidence agreement, evidence completeness, and evidence count.  
+**Output:** calibrated confidence, expected calibration error estimate, confidence label, and provenance.  
+**Rule:** calibration reflects software uncertainty in the available evidence, not clinical certainty.
+
 ### Resources
 
 - `evidence://{candidateId}`
@@ -228,7 +264,66 @@ Apply versioned deterministic biological rules and preserve every outcome.
 - `constraint-outcome://{outcomeId}`
 - `candidate-decision://{candidateId}`
 
-## 6. Report tools
+## 6. Structure tools
+
+### Purpose
+
+Represent the mandatory Structure MCP capability inside the single NitroStack MCP app.
+Current implementation is fixture-safe and fail-closed for live-only requests unless live structure
+adapters are configured in a future deployment.
+
+### Tools
+
+- `fetch_structure`
+- `validate_structure`
+- `map_epitopes_to_structure`
+- `calculate_surface_accessibility`
+- `calculate_structure_confidence`
+- `detect_binding_pockets`
+- `create_molstar_view`
+
+All outputs include source status and provenance. Fixture outputs set `scientificUse=false` unless
+the source is an explicitly configured live connector.
+
+## 7. Chemistry tools
+
+### Purpose
+
+Represent the mandatory Chemistry MCP capability inside the single NitroStack MCP app.
+Current implementation supports deterministic compound validation, deduplication, descriptor
+estimation, and ligand-preparation references with explicit fixture provenance.
+
+### Tools
+
+- `fetch_compound`
+- `validate_compound`
+- `deduplicate_compounds`
+- `calculate_molecular_descriptors`
+- `prepare_ligand`
+
+Live-only PubChem/RDKit/Open Babel requests fail closed until those runtime adapters are configured.
+
+## 8. Docking tools
+
+### Purpose
+
+Represent the mandatory docking capability inside the single NitroStack MCP app.
+Current implementation provides deterministic fixture-safe receptor preparation, docking-box
+validation, docking replay, pose clustering, and interaction extraction.
+
+### Tools
+
+- `prepare_receptor`
+- `validate_docking_box`
+- `run_docking`
+- `cluster_docking_poses`
+- `extract_interactions`
+- `create_molstar_view`
+
+Vina/live docking mode fails closed when the runtime is unavailable. Fixture docking output is
+clearly marked as fixture-backed and not a validated live docking result.
+
+## 9. Report / Export tools
 
 ### Purpose
 
@@ -266,6 +361,30 @@ Create immutable researcher-facing views and exports from approved structured da
 **Output:** ordered trace JSON artifact.  
 **Rule:** excludes secrets, unrestricted external bodies, and hidden chain-of-thought.
 
+### `describe_agentic_workflow`
+
+**Input:** run ID, run intent, and whether to include future interface agents.  
+**Output:** single-app deployment boundary, internal agent manifest, deterministic workflow graph, human approval gates, guardrails, and final research-package contract.  
+**Rule:** read-only and deterministic. It exposes agentic capability without creating additional deployed MCP servers.
+
+### `run_agentic_workflow`
+
+**Input:** run ID, objective, `agentMode: LLM | DETERMINISTIC`, approved tool names, and human-approval requirement.  
+**Output:** LangGraph runtime identifier, bounded ReAct-style steps, selected tools, verification decisions, approval gates, and warnings.  
+**Rule:** agent nodes may route and verify; they may not invent scientific values or bypass human approval.
+
+### `chat_with_research_agent`
+
+**Input:** run ID, researcher question, evidence summary, requested agent mode, and audience.  
+**Output:** grounded answer, cited evidence keys, limitations, whether an LLM was used, and agent mode.  
+**Rule:** if evidence is missing, the answer must abstain rather than fabricate.
+
+### `export_research_package`
+
+**Input:** run ID, package manifest, required sections, CSV inclusion flag, and agent-trace inclusion flag.  
+**Output:** artifact metadata and required-section summary for `research-package.zip`.  
+**Rule:** the package must include JSON/MD artifacts and the currently generated CSV exports.
+
 ### Prompts
 
 - `explain_candidate` — grounded explanation for `RESEARCHER` or `JUDGE` audience.
@@ -281,7 +400,7 @@ Prompt text is versioned in [PROMPTS.md](PROMPTS.md) and application files; prom
 - `artifact://{artifactId}`
 - `trace://{runId}`
 
-## 7. Observability requirements
+## 10. Observability requirements
 
 Every call records:
 
@@ -296,11 +415,11 @@ Every call records:
 
 Do not log full sequences or unbounded scientific outputs.
 
-## 8. Idempotency
+## 11. Idempotency
 
 Pure tools are naturally idempotent. I/O tools accept `requestId` and a caller-supplied idempotency key. Repeated `generate_report` or connector requests with the same key return the existing successful artifact/observation unless `force=true` is explicitly allowed by the API.
 
-## 9. Contract acceptance criteria
+## 12. Contract acceptance criteria
 
 - All tool schemas have positive and negative Vitest cases.
 - NitroStudio can invoke every tool using a documented example.
@@ -308,5 +427,6 @@ Pure tools are naturally idempotent. I/O tools accept `requestId` and a caller-s
 - No tool returns an untyped raw provider response.
 - All error codes are stable and documented in API/test fixtures.
 - A fixture-backed call is visually and structurally distinguishable from a live call.
-- NitroStudio exposes one server identity and all four capability modules.
+- NitroStudio exposes one server identity and all seven capability modules.
 - GraphBepi contract tests prove that no live/cache execution path is reachable in the MVP.
+- Structure, chemistry, and docking tools are discoverable and fail closed for live-only calls when no live runtime is configured.

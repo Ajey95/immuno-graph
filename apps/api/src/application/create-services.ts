@@ -19,6 +19,7 @@ import { HttpMcpToolGateway } from './http-mcp-tool-gateway.js';
 import { LocalConnectorDiagnosticsPort } from './local-connector-diagnostics-port.js';
 import { LocalReportGenerationPort } from './local-report-generation-port.js';
 import { McpReportGenerationPort } from './mcp-report-generation-port.js';
+import { AgentService } from './services/agent-service.js';
 import { CandidateService } from './services/candidate-service.js';
 import { DiagnosticsService } from './services/diagnostics-service.js';
 import { EventService } from './services/event-service.js';
@@ -73,6 +74,7 @@ export function createServices(
       })(),
       artifactStore,
     ),
+    agents: new AgentService(mcpGateway),
     diagnostics: new DiagnosticsService(
       repositories.databaseHealth,
       overrides.connectors ?? new LocalConnectorDiagnosticsPort(),

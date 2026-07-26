@@ -26,6 +26,8 @@ export type ApiOperation =
   | 'explanations.generate'
   | 'reports.create'
   | 'artifacts.list'
+  | 'agents.runWorkflow'
+  | 'agents.chat'
   | 'settings.profiles'
   | 'settings.runtime';
 

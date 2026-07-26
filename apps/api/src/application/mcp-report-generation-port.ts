@@ -8,6 +8,7 @@ import { DependencyUnavailableError } from './errors.js';
 import { isFallbackEligible } from './execution-policy.js';
 import type { McpToolGateway } from './mcp-tool-gateway.js';
 import type { ReportGenerationCommand, ReportGenerationPort } from './ports.js';
+import { createResearchPackageArtifact } from './research-package-artifact.js';
 import { createSupplementalReportArtifacts } from './report-artifacts.js';
 
 const sha256 = z.string().regex(/^[a-f0-9]{64}$/);
@@ -35,8 +36,15 @@ const SYNTHETIC_REPORT_DISCLAIMER =
 type ReportRepositories = Pick<
   Repositories,
   | 'runs'
+  | 'projects'
+  | 'proteins'
   | 'candidates'
   | 'rankingResults'
+  | 'predictorExecutions'
+  | 'observations'
+  | 'populationCoverageResults'
+  | 'shortlistOptimizationResults'
+  | 'approvals'
   | 'artifacts'
   | 'events'
   | 'graphEdges'
@@ -153,6 +161,12 @@ export class McpReportGenerationPort implements ReportGenerationPort {
         templateVersion: command.options.templateVersion,
         includeEvidenceGraph: command.options.includeEvidenceGraph,
         includeWorkflowTrace: command.options.includeWorkflowTrace,
+      });
+      await createResearchPackageArtifact(this.repositories, this.artifactStore, {
+        runId: command.runId,
+        rankingSnapshotHash: snapshotHash,
+        requestSuffix: suffix,
+        templateVersion: command.options.templateVersion,
       });
       const first = created[0];
       if (first === undefined) throw new DependencyUnavailableError('MCP report output');

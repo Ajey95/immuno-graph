@@ -8,16 +8,23 @@ import type { z } from 'zod';
 import type { CapabilityPort } from '../common/capability-port.js';
 import { unavailableCapabilityPort } from '../common/capability-port.js';
 import { executeTool } from '../common/executor.js';
+import { describeAgenticWorkflow } from '../orchestration/agent-manifest.js';
+import { runLangGraphAgentWorkflow } from '../orchestration/langgraph-agent-runtime.js';
+import { generateGroundedLlmText } from '../orchestration/llm-provider.js';
 import {
+  chatWithResearchAgentContract,
+  describeAgenticWorkflowContract,
   explainCandidateContract,
   exportCandidatesContract,
+  exportResearchPackageContract,
   exportTraceContract,
   generateReportContract,
+  runAgenticWorkflowContract,
   toolOptions,
   visualizeResultsContract,
 } from '../tool-contracts.js';
 
-const CATEGORY = 'Report Tools';
+const CATEGORY = 'Report / Export Tools';
 
 @ControllerDecorator()
 export class ReportController {
@@ -142,6 +149,129 @@ export class ReportController {
   @ToolDecorator(toolOptions(exportTraceContract, CATEGORY))
   exportWorkflowTrace(input: unknown, context: ExecutionContext) {
     return this.invokeCapability(exportTraceContract, input, context);
+  }
+
+  @ToolDecorator(toolOptions(describeAgenticWorkflowContract, CATEGORY))
+  describeAgenticWorkflow(input: unknown, context: ExecutionContext) {
+    return executeTool({
+      toolName: describeAgenticWorkflowContract.name,
+      input,
+      inputSchema: describeAgenticWorkflowContract.inputSchema,
+      dataSchema: describeAgenticWorkflowContract.dataSchema,
+      context,
+      operation: (validated) => describeAgenticWorkflow(validated),
+    });
+  }
+
+  @ToolDecorator(toolOptions(runAgenticWorkflowContract, CATEGORY))
+  runAgenticWorkflow(input: unknown, context: ExecutionContext) {
+    return executeTool({
+      toolName: runAgenticWorkflowContract.name,
+      input,
+      inputSchema: runAgenticWorkflowContract.inputSchema,
+      dataSchema: runAgenticWorkflowContract.dataSchema,
+      context,
+      operation: runLangGraphAgentWorkflow,
+    });
+  }
+
+  @ToolDecorator(toolOptions(chatWithResearchAgentContract, CATEGORY))
+  chatWithResearchAgent(input: unknown, context: ExecutionContext) {
+    return executeTool({
+      toolName: chatWithResearchAgentContract.name,
+      input,
+      inputSchema: chatWithResearchAgentContract.inputSchema,
+      dataSchema: chatWithResearchAgentContract.dataSchema,
+      context,
+      operation: async (validated) => {
+        const evidenceKeys = Object.keys(validated.evidenceSummary).sort();
+        const grounded = evidenceKeys.length > 0;
+        const llm =
+          validated.agentMode === 'LLM' && grounded
+            ? await generateGroundedLlmText({
+                purpose: 'RESEARCH_CHAT',
+                prompt: validated.question,
+                evidence: Object.fromEntries(
+                  Object.entries(validated.evidenceSummary).map(([key, value]) => [
+                    key,
+                    typeof value === 'string' ? value : JSON.stringify(value),
+                  ]),
+                ),
+              })
+            : { used: false, text: null, warning: null };
+        const answer =
+          evidenceKeys.length === 0
+            ? 'I do not have stored evidence for this question, so I must abstain rather than infer scientific facts.'
+            : (llm.text ??
+              `Grounded answer from stored ImmunoGraph evidence: ${evidenceKeys.join(', ')}. Scientific values must be interpreted only with their recorded provenance.`);
+        return {
+          answer,
+          grounded,
+          citedEvidenceKeys: evidenceKeys,
+          limitations: [
+            ...(llm.warning === null ? [] : [llm.warning]),
+            'LLM/chat responses cannot create new scientific facts.',
+            'Use exported reports and provenance records for scientific review.',
+          ],
+          agentMode: validated.agentMode,
+          llmUsed: llm.used,
+        };
+      },
+    });
+  }
+
+  @ToolDecorator(toolOptions(exportResearchPackageContract, CATEGORY))
+  exportResearchPackage(input: unknown, context: ExecutionContext) {
+    return executeTool({
+      toolName: exportResearchPackageContract.name,
+      input,
+      inputSchema: exportResearchPackageContract.inputSchema,
+      dataSchema: exportResearchPackageContract.dataSchema,
+      context,
+      operation: (validated) => {
+        const requiredSections = [
+          'manifest.json',
+          'project.json',
+          'run.json',
+          'configuration.json',
+          'inputs/',
+          'predictions/',
+          'candidates/',
+          ...(validated.includeStructure ? ['structure/'] : []),
+          ...(validated.includeChemistry ? ['compounds/'] : []),
+          ...(validated.includeDocking ? ['docking/'] : []),
+          'construct/',
+          'evidence/',
+          'reports/',
+          'checksums.json',
+        ];
+        const contents = JSON.stringify(
+          {
+            schemaVersion: 'immunograph-research-package.v1.1',
+            runId: validated.runId,
+            requiredSections,
+            includesCsvExports: true,
+            includesAgentTrace: validated.includeAgentTrace,
+          },
+          null,
+          2,
+        );
+        const bytes = Buffer.from(contents, 'utf8');
+        return {
+          artifact: {
+            artifactId: `${validated.runId}-research-package`,
+            mediaType: 'application/zip',
+            sha256: createHash('sha256').update(bytes).digest('hex'),
+            byteLength: bytes.byteLength,
+            reference: `mcp://research-packages/${validated.runId}/research-package.zip`,
+            contentBase64: bytes.toString('base64'),
+          },
+          requiredSections,
+          includesCsvExports: true as const,
+          includesAgentTrace: validated.includeAgentTrace,
+        };
+      },
+    });
   }
 
   private invokeCapability<TInput extends z.ZodTypeAny, TData extends z.ZodTypeAny>(

@@ -195,7 +195,7 @@ Every test uses a unique temporary database and artifact directory.
 - `rank_candidates` distinguishes preliminary and final contracts;
 - `optimize_shortlist_coverage` runs only after final ranking and rejects B-cell candidates;
 - report export rejects unapproved run.
-- one NitroStack server identity registers all four capability modules;
+- one NitroStack server identity registers the documented capability groups and tool catalog;
 - agent tool allowlists are enforced within the shared server;
 - synthetic binding and synthetic population tools always return demonstration-only provenance;
 - GraphBepi can return only `FIXTURE` or `FAILED` and has no reachable live/cache path.

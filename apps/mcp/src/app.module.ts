@@ -2,10 +2,13 @@ import 'dotenv/config';
 
 import { McpApp, Module, OAuthModule } from '@nitrostack/core';
 
+import { ChemistryModule } from './chemistry/chemistry.module.js';
 import { ConstraintModule } from './constraint/constraint.module.js';
+import { DockingModule } from './docking/docking.module.js';
 import { EvidenceModule } from './evidence/evidence.module.js';
 import { PredictionModule } from './prediction/prediction.module.js';
 import { ReportModule } from './report/report.module.js';
+import { StructureModule } from './structure/structure.module.js';
 
 const nodeEnv = process.env.NODE_ENV ?? 'development';
 const transportType = (process.env.MCP_TRANSPORT_TYPE ?? 'http') as 'stdio' | 'http' | 'dual';
@@ -52,6 +55,9 @@ const authorizationServer =
     PredictionModule,
     EvidenceModule,
     ConstraintModule,
+    StructureModule,
+    ChemistryModule,
+    DockingModule,
     ReportModule,
   ],
 })

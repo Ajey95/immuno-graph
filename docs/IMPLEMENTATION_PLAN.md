@@ -42,7 +42,7 @@ A later phase may start only when required predecessor criteria pass.
 - `npm run build` builds all workspaces in dependency order.
 - API exposes runtime and connector diagnostics for the web shell plus a lightweight `/health/live` process probe.
 - Web app renders API-backed runtime and connector states.
-- The single MCP server starts, exposes one identity in NitroStudio, and lists all four capability modules even before scientific tools are implemented.
+- The single MCP server starts, exposes one identity in NitroStudio, and lists the current capability groups even before every scientific runtime is available locally.
 - No package imports a forbidden dependency direction from [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Phase 1 — Domain contracts and deterministic core
@@ -118,7 +118,7 @@ A later phase may start only when required predecessor criteria pass.
 - Stable tool error mapper.
 - NitroStudio example inputs.
 - MCP contract test suite.
-- One deployable/startable `immunograph-mcp` process containing four capability modules.
+- One deployable/startable `immunograph-mcp` process containing the full MCP capability catalog: prediction, evidence, constraints, reports, governance, structure, chemistry, docking, and agent orchestration.
 
 ### Acceptance criteria
 
@@ -250,7 +250,7 @@ Current implementation note: IEDB MHC-I/MHC-II adapter code, local MHCflurry MHC
 | Workstream | Scope |
 |---|---|
 | Deterministic core | Domain schemas, algorithms, rules, ranking, tests |
-| Scientific/MCP | Connectors, hybrid resolver, one MCP server with four capability modules |
+| Scientific/MCP | Connectors, hybrid resolver, one NitroStack MCP app with internal capability/tool groups |
 | Platform | Fastify, workflow supervisor, Prisma, SSE, observability |
 | Experience | React UI, visualizations, approval, exports, demo |
 

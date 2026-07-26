@@ -24,4 +24,6 @@ nitrocloud-smoke*.log
 local-review-output/
 tools/
 C*UsersvvtheDownloadsprojectsimunograph/
+__pycache__/
+scripts/science/__pycache__/
 C*UsersvvtheDownloadsprojectsimmuno-graph/

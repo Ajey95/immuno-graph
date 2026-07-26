@@ -10,6 +10,14 @@ const rawMcpEnvironmentSchema = z.object({
   MCP_PORT: z.coerce.number().int().min(1).max(65_535).optional(),
   MCP_TRANSPORT_TYPE: transportSchema.optional(),
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  AGENT_MODE: z.enum(['LLM', 'DETERMINISTIC']).default('DETERMINISTIC'),
+  LLM_ENABLED: z
+    .enum(['true', 'false'])
+    .transform((v) => v === 'true')
+    .default('false'),
+  OPENAI_API_KEY: z.string().min(1).optional(),
+  LLM_MODEL: z.string().min(1).default('gpt-4.1-mini'),
+  LLM_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
   /** Enable real IEDB live binding predictions. Off by default (safe offline mode). */
   IEDB_LIVE_ENABLED: z
     .enum(['true', 'false'])
@@ -66,6 +74,68 @@ const rawMcpEnvironmentSchema = z.object({
     .int()
     .positive()
     .default(10 * 1024 * 1024),
+  STRUCTURE_ENABLED: z
+    .enum(['true', 'false'])
+    .transform((v) => v === 'true')
+    .default('true'),
+  RCSB_PDB_ENABLED: z
+    .enum(['true', 'false'])
+    .transform((v) => v === 'true')
+    .default('false'),
+  ALPHAFOLD_DB_ENABLED: z
+    .enum(['true', 'false'])
+    .transform((v) => v === 'true')
+    .default('false'),
+  CHEMISTRY_ENABLED: z
+    .enum(['true', 'false'])
+    .transform((v) => v === 'true')
+    .default('true'),
+  PUBCHEM_ENABLED: z
+    .enum(['true', 'false'])
+    .transform((v) => v === 'true')
+    .default('false'),
+  RDKIT_ENABLED: z
+    .enum(['true', 'false'])
+    .transform((v) => v === 'true')
+    .default('false'),
+  RDKIT_PYTHON_COMMAND: z.string().min(1).default('python'),
+  OPENBABEL_ENABLED: z
+    .enum(['true', 'false'])
+    .transform((v) => v === 'true')
+    .default('false'),
+  OPENBABEL_COMMAND: z.string().min(1).default('obabel'),
+  DOCKING_ENABLED: z
+    .enum(['true', 'false'])
+    .transform((v) => v === 'true')
+    .default('true'),
+  VINA_ENABLED: z
+    .enum(['true', 'false'])
+    .transform((v) => v === 'true')
+    .default('false'),
+  VINA_COMMAND: z.string().min(1).default('vina'),
+  PLIP_ENABLED: z
+    .enum(['true', 'false'])
+    .transform((v) => v === 'true')
+    .default('false'),
+  PLIP_COMMAND: z.string().min(1).default('plip'),
+  FPOCKET_ENABLED: z
+    .enum(['true', 'false'])
+    .transform((v) => v === 'true')
+    .default('false'),
+  FPOCKET_COMMAND: z.string().min(1).default('fpocket'),
+  FREESASA_ENABLED: z
+    .enum(['true', 'false'])
+    .transform((v) => v === 'true')
+    .default('false'),
+  FREESASA_COMMAND: z.string().min(1).default('freesasa'),
+  MOLSTAR_ENABLED: z
+    .enum(['true', 'false'])
+    .transform((v) => v === 'true')
+    .default('false'),
+  DOCKING_FIXTURE_FALLBACK_ENABLED: z
+    .enum(['true', 'false'])
+    .transform((v) => v === 'true')
+    .default('true'),
 });
 
 export type McpEnvironment = z.infer<typeof rawMcpEnvironmentSchema> & {

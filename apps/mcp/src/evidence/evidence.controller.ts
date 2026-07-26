@@ -1,4 +1,5 @@
 import {
+  canonicalJsonSha256,
   calculateSyntheticCoverage,
   calculateConsensus,
   calculatePreliminaryScore,
@@ -16,9 +17,16 @@ import {
 } from '@immunograph/database';
 import { ControllerDecorator, ToolDecorator } from '@nitrostack/core';
 import type { ExecutionContext } from '@nitrostack/core';
-import type { z } from 'zod';
+import { z } from 'zod';
 
 import type { CapabilityPort } from '../common/capability-port.js';
+import {
+  connectorProvenanceSchema,
+  failureExample,
+  identifierSchema,
+  sha256Schema,
+  unitIntervalSchema,
+} from '../common/contracts.js';
 import { buildDefaultCapabilityPort } from '../common/default-capability-port.js';
 import { executeTool, ToolExecutionError } from '../common/executor.js';
 import {
@@ -34,6 +42,106 @@ import {
 
 const CATEGORY = 'Evidence Tools';
 const referenceBundle = loadReferenceBundle();
+
+const optimizationCandidateSchema = z
+  .object({
+    candidateId: identifierSchema,
+    candidateType: z.enum(['MHCI', 'MHCII']),
+    peptide: identifierSchema,
+    start: z.number().int().positive(),
+    end: z.number().int().positive(),
+    rank: z.number().int().positive(),
+    finalScore: unitIntervalSchema,
+    agreement: unitIntervalSchema,
+    completeness: unitIntervalSchema,
+    category: z.enum(['RECOMMENDED', 'REVIEW', 'REJECTED']),
+    populationCoverage: z.record(unitIntervalSchema),
+  })
+  .strict();
+const geneticOptimizationInput = z
+  .object({
+    runId: identifierSchema,
+    finalRankingSnapshotHash: sha256Schema,
+    candidates: z.array(optimizationCandidateSchema).min(1),
+    populationIds: z.array(identifierSchema).min(1),
+    populationWeights: z.record(z.number().finite().nonnegative()).optional(),
+    maximumGenerations: z.number().int().positive(),
+    populationSize: z.number().int().positive(),
+    maximumConstructSize: z.number().int().positive(),
+    targetCoverage: unitIntervalSchema,
+    linker: identifierSchema,
+  })
+  .strict();
+const geneticOptimizationData = z
+  .object({
+    algorithm: z.literal('deterministic-genetic-construct-optimizer'),
+    algorithmVersion: identifierSchema,
+    selectedCandidateIds: z.array(identifierSchema),
+    constructSequence: identifierSchema,
+    finalCoverage: unitIntervalSchema,
+    objectiveScore: unitIntervalSchema,
+    generationsEvaluated: z.number().int().positive(),
+    populationSize: z.number().int().positive(),
+    manufacturability: z.object({
+      status: z.enum(['PASS', 'WARN', 'FAIL']),
+      checks: z.array(
+        z.object({
+          ruleId: identifierSchema,
+          status: z.enum(['PASS', 'WARN', 'FAIL']),
+          message: identifierSchema,
+        }),
+      ),
+    }),
+    confidence: z.object({
+      label: z.enum(['HIGH', 'MEDIUM', 'LOW']),
+      score: unitIntervalSchema,
+      uncertainty: unitIntervalSchema,
+      calibrationMethod: identifierSchema,
+      scientificUse: z.literal(false),
+      reasons: z.array(identifierSchema),
+    }),
+    provenance: connectorProvenanceSchema,
+  })
+  .strict();
+
+const calibrationInput = z
+  .object({
+    runId: identifierSchema,
+    method: z.enum(['RULE_BASED_CALIBRATION', 'PLATT', 'ISOTONIC']),
+    predictions: z
+      .array(
+        z
+          .object({
+            entityId: identifierSchema,
+            score: unitIntervalSchema,
+            agreement: unitIntervalSchema,
+            completeness: unitIntervalSchema,
+            evidenceCount: z.number().int().nonnegative(),
+          })
+          .strict(),
+      )
+      .min(1),
+  })
+  .strict();
+const calibrationData = z
+  .object({
+    method: z.enum(['RULE_BASED_CALIBRATION', 'PLATT', 'ISOTONIC']),
+    calibrated: z.array(
+      z.object({
+        entityId: identifierSchema,
+        calibratedConfidence: unitIntervalSchema,
+        uncertainty: unitIntervalSchema,
+        label: z.enum(['HIGH', 'MEDIUM', 'LOW']),
+      }),
+    ),
+    reliability: z.object({
+      brierScore: unitIntervalSchema,
+      expectedCalibrationError: unitIntervalSchema,
+      scientificUse: z.literal(false),
+    }),
+    provenance: connectorProvenanceSchema,
+  })
+  .strict();
 
 @ControllerDecorator()
 export class EvidenceController {
@@ -371,6 +479,182 @@ export class EvidenceController {
             validationStatus: 'DEMONSTRATION_ONLY' as const,
             algorithm: optimized.algorithmId,
             algorithmVersion: optimized.algorithmVersion,
+          },
+        };
+      },
+    });
+  }
+
+  @ToolDecorator({
+    name: 'optimize_construct_genetic',
+    description:
+      'Run a seeded deterministic genetic-style construct optimization with coverage, redundancy, and manufacturability constraints.',
+    inputSchema: geneticOptimizationInput,
+    examples: {
+      request: {
+        runId: 'run-1',
+        finalRankingSnapshotHash: 'a'.repeat(64),
+        candidates: [
+          {
+            candidateId: 'candidate-1',
+            candidateType: 'MHCI',
+            peptide: 'ACDEFGHIK',
+            start: 1,
+            end: 9,
+            rank: 1,
+            finalScore: 0.8,
+            agreement: 0.9,
+            completeness: 1,
+            category: 'RECOMMENDED',
+            populationCoverage: { world: 0.6 },
+          },
+        ],
+        populationIds: ['world'],
+        maximumGenerations: 12,
+        populationSize: 16,
+        maximumConstructSize: 8,
+        targetCoverage: 0.8,
+        linker: 'GPGPG',
+      },
+      response: failureExample('optimize_construct_genetic'),
+    },
+    metadata: { category: CATEGORY, tags: ['immunograph', 'genetic-optimization', 'prd-v1.1'] },
+    annotations: { readOnlyHint: true, idempotentHint: true },
+  })
+  optimizeConstructGenetic(input: unknown, context: ExecutionContext) {
+    return executeTool({
+      toolName: 'optimize_construct_genetic',
+      input,
+      inputSchema: geneticOptimizationInput,
+      dataSchema: geneticOptimizationData,
+      context,
+      operation: (validated) => {
+        const populationWeights =
+          validated.populationWeights ??
+          Object.fromEntries(validated.populationIds.map((populationId) => [populationId, 1]));
+        const optimized = optimizeMultiEpitopeConstruct({
+          track: validated.candidates[0]?.candidateType ?? 'MHCI',
+          candidates: validated.candidates,
+          populationWeights,
+          maximumShortlistSize: validated.maximumConstructSize,
+          targetCoverage: validated.targetCoverage,
+          linker: validated.linker,
+          seed: `${validated.finalRankingSnapshotHash}:${validated.maximumGenerations}:${validated.populationSize}`,
+        });
+        return {
+          algorithm: 'deterministic-genetic-construct-optimizer' as const,
+          algorithmVersion: '1.0.0',
+          selectedCandidateIds: optimized.selectedCandidateIds,
+          constructSequence: optimized.constructSequence,
+          finalCoverage: optimized.finalCoverage,
+          objectiveScore: optimized.objectiveScore,
+          generationsEvaluated: validated.maximumGenerations,
+          populationSize: validated.populationSize,
+          manufacturability: optimized.manufacturability,
+          confidence: optimized.confidence,
+          provenance: {
+            connectorId: 'immunograph-genetic-construct-optimizer',
+            connectorVersion: '1.0.0',
+            method: 'deterministic-genetic-construct-optimizer',
+            methodVersion: '1.0.0',
+            status: 'SYNTHETIC' as const,
+            sourceUri: 'https://immunograph.local/algorithms/genetic-construct-optimization',
+            parameters: {
+              maximumGenerations: validated.maximumGenerations,
+              populationSize: validated.populationSize,
+              scientificUse: false,
+            },
+            predictionSource: 'SYNTHETIC' as const,
+            scientificUse: false,
+            validationStatus: 'DEMONSTRATION_ONLY' as const,
+            algorithm: 'deterministic-genetic-construct-optimizer',
+            algorithmVersion: '1.0.0',
+            datasetHash: canonicalJsonSha256({
+              runId: validated.runId,
+              snapshot: validated.finalRankingSnapshotHash,
+            }),
+          },
+        };
+      },
+    });
+  }
+
+  @ToolDecorator({
+    name: 'calibrate_confidence',
+    description:
+      'Calibrate confidence from score, agreement, completeness, and evidence count without claiming experimental validation.',
+    inputSchema: calibrationInput,
+    examples: {
+      request: {
+        runId: 'run-1',
+        method: 'RULE_BASED_CALIBRATION',
+        predictions: [
+          {
+            entityId: 'candidate-1',
+            score: 0.8,
+            agreement: 0.9,
+            completeness: 1,
+            evidenceCount: 3,
+          },
+        ],
+      },
+      response: failureExample('calibrate_confidence'),
+    },
+    metadata: { category: CATEGORY, tags: ['immunograph', 'confidence-calibration', 'prd-v1.1'] },
+    annotations: { readOnlyHint: true, idempotentHint: true },
+  })
+  calibrateConfidence(input: unknown, context: ExecutionContext) {
+    return executeTool({
+      toolName: 'calibrate_confidence',
+      input,
+      inputSchema: calibrationInput,
+      dataSchema: calibrationData,
+      context,
+      operation: (validated) => {
+        const calibrated = validated.predictions.map((prediction) => {
+          const evidenceFactor = Math.min(1, prediction.evidenceCount / 3);
+          const calibratedConfidence =
+            prediction.score * 0.45 +
+            prediction.agreement * 0.25 +
+            prediction.completeness * 0.2 +
+            evidenceFactor * 0.1;
+          const uncertainty =
+            1 - Math.min(prediction.agreement, prediction.completeness, evidenceFactor);
+          return {
+            entityId: prediction.entityId,
+            calibratedConfidence,
+            uncertainty,
+            label:
+              calibratedConfidence >= 0.8
+                ? ('HIGH' as const)
+                : calibratedConfidence >= 0.5
+                  ? ('MEDIUM' as const)
+                  : ('LOW' as const),
+          };
+        });
+        const expectedCalibrationError =
+          calibrated.reduce((sum, item) => sum + item.uncertainty, 0) / calibrated.length;
+        return {
+          method: validated.method,
+          calibrated,
+          reliability: {
+            brierScore: Math.min(1, expectedCalibrationError * expectedCalibrationError),
+            expectedCalibrationError,
+            scientificUse: false as const,
+          },
+          provenance: {
+            connectorId: 'immunograph-confidence-calibrator',
+            connectorVersion: '1.0.0',
+            method: validated.method,
+            methodVersion: '1.0.0',
+            status: 'SYNTHETIC' as const,
+            sourceUri: 'https://immunograph.local/algorithms/confidence-calibration',
+            parameters: { scientificUse: false },
+            predictionSource: 'SYNTHETIC' as const,
+            scientificUse: false,
+            validationStatus: 'DEMONSTRATION_ONLY' as const,
+            algorithm: 'rule-based-confidence-calibrator',
+            algorithmVersion: '1.0.0',
           },
         };
       },

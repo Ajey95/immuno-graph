@@ -46,6 +46,7 @@
     "connectors:check:iedb-population": "node scripts/check-iedb-population.mjs",
     "connectors:install:mhcflurry": "node scripts/install-mhcflurry.mjs",
     "connectors:check:mhcflurry": "node scripts/check-mhcflurry.mjs",
+    "science:check": "node scripts/check-science-runtime.mjs",
     "db:generate": "npm run db:generate --workspace @immunograph/database",
     "db:migrate": "npm run db:migrate --workspace @immunograph/database",
     "db:seed": "npm run db:seed --workspace @immunograph/database"

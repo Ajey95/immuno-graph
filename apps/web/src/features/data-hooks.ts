@@ -91,10 +91,7 @@ export const useShortlistOptimization = (
   useQuery({
     queryKey: ['shortlist-optimization', id, track],
     queryFn: () =>
-      apiRequest(
-        `/runs/${id}/shortlist-optimization?track=${track}`,
-        shortlistOptimizationSchema,
-      ),
+      apiRequest(`/runs/${id}/shortlist-optimization?track=${track}`, shortlistOptimizationSchema),
     enabled: id !== '' && (options?.enabled ?? true),
     retry: false,
   });
