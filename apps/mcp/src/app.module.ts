@@ -11,7 +11,8 @@ const nodeEnv = process.env.NODE_ENV ?? 'development';
 const transportType = (process.env.MCP_TRANSPORT_TYPE ?? 'http') as 'stdio' | 'http' | 'dual';
 const httpHost =
   process.env.HOST ?? process.env.MCP_HOST ?? (nodeEnv === 'production' ? '0.0.0.0' : '127.0.0.1');
-const httpPort = Number(process.env.PORT ?? process.env.MCP_PORT ?? 3001);
+const defaultHttpPort = nodeEnv === 'production' ? 3000 : 3001;
+const httpPort = Number(process.env.PORT ?? process.env.MCP_PORT ?? defaultHttpPort);
 const resourceUri =
   process.env.OAUTH_RESOURCE_URI ??
   process.env.RESOURCE_URI ??

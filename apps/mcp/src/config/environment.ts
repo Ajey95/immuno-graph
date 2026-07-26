@@ -7,7 +7,7 @@ const rawMcpEnvironmentSchema = z.object({
   HOST: z.string().optional(),
   PORT: z.coerce.number().int().min(1).max(65_535).optional(),
   MCP_HOST: z.string().optional(),
-  MCP_PORT: z.coerce.number().int().min(1).max(65_535).default(3001),
+  MCP_PORT: z.coerce.number().int().min(1).max(65_535).optional(),
   MCP_TRANSPORT_TYPE: transportSchema.optional(),
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   /** Enable real IEDB live binding predictions. Off by default (safe offline mode). */
@@ -78,12 +78,14 @@ export type McpEnvironment = z.infer<typeof rawMcpEnvironmentSchema> & {
 export function loadMcpEnvironment(): McpEnvironment {
   const parsed = rawMcpEnvironmentSchema.parse(process.env);
   const cloudHost = parsed.NODE_ENV === 'production' ? '0.0.0.0' : '127.0.0.1';
+  const defaultPort = parsed.NODE_ENV === 'production' ? 3000 : 3001;
   const host = parsed.HOST ?? parsed.MCP_HOST ?? cloudHost;
   return {
     ...parsed,
     HOST: host,
-    PORT: parsed.PORT ?? parsed.MCP_PORT,
+    PORT: parsed.PORT ?? parsed.MCP_PORT ?? defaultPort,
     MCP_HOST: parsed.MCP_HOST ?? host,
+    MCP_PORT: parsed.MCP_PORT ?? parsed.PORT ?? defaultPort,
     MCP_TRANSPORT_TYPE: parsed.MCP_TRANSPORT_TYPE ?? 'http',
   };
 }

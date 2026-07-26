@@ -28,6 +28,19 @@ describe('MCP environment', () => {
       HOST: '0.0.0.0',
       PORT: 8080,
       MCP_HOST: '0.0.0.0',
+      MCP_PORT: 8080,
+      MCP_TRANSPORT_TYPE: 'http',
+    });
+  });
+
+  it('defaults production cloud runtimes to NitroCloud standard port 3000', () => {
+    process.env = { NODE_ENV: 'production' };
+
+    expect(loadMcpEnvironment()).toMatchObject({
+      HOST: '0.0.0.0',
+      PORT: 3000,
+      MCP_HOST: '0.0.0.0',
+      MCP_PORT: 3000,
       MCP_TRANSPORT_TYPE: 'http',
     });
   });

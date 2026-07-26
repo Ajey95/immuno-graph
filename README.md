@@ -153,8 +153,8 @@ Recommended cloud environment:
 ```env
 NODE_ENV=production
 HOST=0.0.0.0
-PORT=3001
-MCP_TRANSPORT_TYPE=dual
+PORT=3000
+MCP_TRANSPORT_TYPE=http
 IEDB_LIVE_ENABLED=true
 IEDB_POPULATION_COVERAGE_ENABLED=true
 IEDB_POPULATION_COVERAGE_SCRIPT_PATH=/opt/iedb/population_coverage/calculate_population_coverage.py
@@ -174,7 +174,7 @@ Docker deployment:
 
 ```powershell
 docker build -f Dockerfile.mcp -t immunograph-mcp .
-docker run --rm -p 3001:3001 --env-file .env.production.example immunograph-mcp
+docker run --rm -p 3000:3000 --env-file .env.production.example immunograph-mcp
 ```
 
 ## Complete production stack
