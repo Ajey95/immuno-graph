@@ -1,4 +1,4 @@
-import { McpApp, Module, ConfigModule, OAuthModule } from '@nitrostack/core';
+import { McpApp, Module, ConfigModule } from '@nitrostack/core';
 
 import { ChemistryModule } from './modules/chemistry/chemistry.module.js';
 import { ConstraintModule } from './modules/constraint/constraint.module.js';
@@ -9,12 +9,6 @@ import { PredictionModule } from './modules/prediction/prediction.module.js';
 import { ReportModule } from './modules/report/report.module.js';
 import { StructureModule } from './modules/structure/structure.module.js';
 import { SystemHealthCheck } from './health/system.health.js';
-
-const mcpPort = Number(process.env.MCP_SERVER_PORT ?? process.env.PORT ?? 3000);
-const mcpHost = process.env.HOST ?? '0.0.0.0';
-const resourceUri = process.env.RESOURCE_URI ?? `http://localhost:${mcpPort}`;
-const authorizationServer =
-  process.env.AUTH_SERVER_URL ?? process.env.TOKEN_ISSUER ?? 'https://auth.example.com';
 
 @McpApp({
   module: AppModule,
@@ -31,22 +25,6 @@ const authorizationServer =
   description: 'ImmunoGraph NitroCloud MCP application',
   imports: [
     ConfigModule.forRoot(),
-    OAuthModule.forRoot({
-      resourceUri,
-      authorizationServers: [authorizationServer],
-      scopesSupported: ['read', 'write'],
-      audience: process.env.TOKEN_AUDIENCE,
-      issuer: process.env.TOKEN_ISSUER,
-      jwksUri: process.env.JWKS_URI,
-      tokenIntrospectionEndpoint: process.env.INTROSPECTION_ENDPOINT,
-      tokenIntrospectionClientId: process.env.INTROSPECTION_CLIENT_ID,
-      tokenIntrospectionClientSecret: process.env.INTROSPECTION_CLIENT_SECRET,
-      http: {
-        port: mcpPort,
-        host: mcpHost,
-        basePath: '/mcp',
-      },
-    }),
     PredictionModule,
     EvidenceModule,
     ConstraintModule,
@@ -55,6 +33,17 @@ const authorizationServer =
     DockingModule,
     ReportModule,
   ],
-  providers: [SystemHealthCheck, CloudHealthRoute],
+  providers: [
+    SystemHealthCheck,
+    CloudHealthRoute,
+    {
+      provide: 'OAUTH_CONFIG',
+      useValue: {
+        resourceUri: 'http://localhost:3000',
+        authorizationServers: ['https://auth.example.com'],
+        required: false,
+      },
+    },
+  ],
 })
 export class AppModule {}
