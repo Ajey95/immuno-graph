@@ -532,3 +532,11 @@ The test suite covers deterministic algorithms, schema validation, repository be
 - [IEDB population coverage package](https://tools.iedb.org/population/download/)
 - [MHCflurry documentation](https://openvax.github.io/mhcflurry/)
 - [GraphBepi publication](https://pubmed.ncbi.nlm.nih.gov/37039829/)
+
+## 📄 License
+
+This project is licensed under the **MIT License**.
+
+You are free to use, modify, distribute, and build upon this work, provided that the original copyright notice and license are included.
+
+See the [LICENSE](LICENSE) file for the full license text.
