@@ -6,6 +6,7 @@ import { ChemistryModule } from './chemistry/chemistry.module.js';
 import { ConstraintModule } from './constraint/constraint.module.js';
 import { DockingModule } from './docking/docking.module.js';
 import { EvidenceModule } from './evidence/evidence.module.js';
+import { CloudHealthRoute } from './config/cloud-health-route.js';
 import { PredictionModule } from './prediction/prediction.module.js';
 import { ReportModule } from './report/report.module.js';
 import { StructureModule } from './structure/structure.module.js';
@@ -60,5 +61,6 @@ const authorizationServer =
     DockingModule,
     ReportModule,
   ],
+  providers: [CloudHealthRoute],
 })
 export class AppModule {}
