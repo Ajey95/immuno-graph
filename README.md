@@ -88,7 +88,7 @@ flowchart TD
 
 The API owns workflow lifecycle, persistence, transactions, idempotency, and browser-facing contracts. The MCP app owns typed scientific capabilities. The algorithm package remains pure TypeScript with no database, HTTP, Fastify, NitroStack, or LLM dependency.
 
-## Repository Map
+## Repository Map - According to the branches.
 
 | Path | Responsibility |
 | --- | --- |
@@ -240,6 +240,81 @@ Install only the components required for the capabilities you plan to use.
 | Local chemistry/docking | Open Babel, RDKit, AutoDock Vina, PLIP, fpocket, and FreeSASA where those live paths are enabled |
 | NitroStack Cloud | GitHub import flow, Node.js 20 runtime, and repository-root deployment |
 
+## 🧬 Scientific Capabilities
+
+Our platform is organized into specialized scientific modules, each responsible for a distinct stage of the vaccine and therapeutic discovery pipeline.
+
+### Immunology
+
+Core immunoinformatics capabilities for identifying and evaluating immune targets.
+
+| Capability | Description |
+|------------|-------------|
+| FASTA Validation | Validates protein sequences before downstream analysis. |
+| Peptide Generation | Generates candidate peptide fragments from protein sequences. |
+| MHC-I Prediction | Predicts Class I HLA binding for CD8+ T-cell responses. |
+| MHC-II Prediction | Predicts Class II HLA binding for CD4+ T-cell responses. |
+| B-cell Prediction | Identifies potential antibody-recognized epitopes. |
+| Population Coverage | Estimates global and regional HLA population coverage. |
+| Consensus Scoring | Combines multiple prediction models into a unified ranking. |
+
+---
+
+### Structural Biology
+
+Structure-aware analysis for validating epitope accessibility and protein context.
+
+| Capability | Description |
+|------------|-------------|
+| Protein Structure Retrieval | Retrieves experimentally determined protein structures. |
+| AlphaFold Support | Utilizes AlphaFold predicted protein models. |
+| PDB Support | Integrates Protein Data Bank (PDB) structures. |
+| Surface Accessibility | Determines whether epitopes are surface exposed. |
+| Confidence Analysis | Evaluates structural prediction confidence. |
+| Epitope Mapping | Maps predicted epitopes onto 3D protein structures. |
+
+---
+
+### Chemistry & Docking
+
+Computational chemistry workflows for molecular interaction analysis.
+
+| Capability | Description |
+|------------|-------------|
+| Ligand Preparation | Cleans and optimizes ligand structures for docking. |
+| Protein Preparation | Prepares receptor structures for simulation. |
+| Molecular Docking | Predicts ligand–protein binding orientations. |
+| Interaction Analysis | Identifies hydrogen bonds, hydrophobic contacts, and key interactions. |
+| Binding Evaluation | Scores and ranks docking results based on predicted affinity. |
+
+---
+
+### Evidence & Governance
+
+Scientific traceability and reproducibility across the discovery pipeline.
+
+| Capability | Description |
+|------------|-------------|
+| Provenance Tracking | Records the origin of every scientific result. |
+| Evidence Graph | Links predictions, datasets, models, and supporting evidence. |
+| Candidate Ranking | Prioritizes candidates using multi-factor evidence scoring. |
+| Audit Trail | Maintains complete execution history for reproducibility. |
+| Report Generation | Produces publication-ready scientific reports. |
+
+---
+
+## 🎯 Design Principles
+
+The platform is built around modern AI engineering and computational biology best practices.
+
+| Principle | Description |
+|-----------|-------------|
+| Single Responsibility Principle | Each agent and MCP performs one well-defined scientific task. |
+| Explainable AI | Every prediction is accompanied by supporting evidence and rationale. |
+| Modular MCP Architecture | Independent scientific services communicate through standardized MCP interfaces. |
+| Scientific Reproducibility | Every experiment can be reproduced with identical inputs and parameters. |
+| Evidence-backed Decision Support | Recommendations are derived from verifiable scientific evidence rather than opaque model outputs. |
+| Human-in-the-loop Research | Researchers retain full oversight and control over every stage of the workflow. |
 ## Quick Start
 
 ```powershell
@@ -312,16 +387,14 @@ npm run science:check
 
 NitroStack Cloud deploys the MCP app, not the full React/API product.
 
-Recommended settings:
-
 | Setting | Value |
 | --- | --- |
 | Branch | `main` |
 | Root / artifact | repository root |
 | Runtime | Node.js 20 |
-| Build command | `npm run nitro:build` |
-| Start command | `npm start` |
-| Health endpoint | `/mcp/health` |
+| Build command | `npm run build` |
+| Start command | `npm start` or `npm run start:prod` |
+| Health endpoint | `/health` |
 | MCP endpoint | `/mcp` |
 
 Recommended non-secret cloud environment:
@@ -360,20 +433,6 @@ docker compose up --build -d
 
 Open `http://localhost:8080`.
 
-## Demo Narrative
-
-Use this four-slide flow when presenting ImmunoGraph Studio.
-
-| Slide | Message |
-| --- | --- |
-| 1. Problem | COVID-era sequence availability exposed the need for faster, integrated, reproducible computational discovery workflows. |
-| 2. Solution | ImmunoGraph Studio turns FASTA input into evidence-backed candidates through one AI-guided research workspace. |
-| 3. Backend | One NitroStack MCP app contains bounded agents and typed scientific tool groups for immunology, evidence, structure, chemistry, docking, and export. |
-| 4. Governance | Every output carries provenance, approval state, limitations, workflow trace, and checksums inside a final research package. |
-
-Speaker framing:
-
-> ImmunoGraph’s core contribution is not a single predictor. It is an auditable MCP-native workflow that coordinates scientific tools, records provenance, labels fallback behavior honestly, and produces review-ready evidence.
 
 ## Security And Scientific Boundaries
 
