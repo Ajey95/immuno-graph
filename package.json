@@ -16,6 +16,9 @@
     "apps/api",
     "apps/mcp"
   ],
+  "dependencies": {
+    "@modelcontextprotocol/ext-apps": "1.7.5"
+  },
   "scripts": {
     "prebuild": "npm install --ignore-scripts --engine-strict=false && npm run db:generate",
     "predev": "npm run db:migrate --workspace @immunograph/database",
@@ -26,13 +29,15 @@
     "dev": "concurrently --kill-others-on-fail --names web,api,mcp \"npm run dev --workspace @immunograph/web\" \"npm run dev --workspace @immunograph/api\" \"npm run dev --workspace @immunograph/mcp\"",
     "dev:status": "node scripts/dev-status.mjs",
     "dev:stop": "node scripts/dev-stop.mjs",
-    "mcp:build": "npm run build --workspace @immunograph/mcp",
+    "mcp:build": "npm run build --workspace @immunograph/shared && npm run build --workspace @immunograph/algorithms && npm run build:mcp --workspace @immunograph/database && tsc -p apps/mcp/tsconfig.json",
     "mcp:dev": "npm run dev --workspace @immunograph/mcp",
     "mcp:start": "npm run start --workspace @immunograph/mcp",
     "mcp:cloud:start": "npm run start --workspace @immunograph/mcp",
     "start": "npm run mcp:cloud:start",
-    "nitro:build": "npm run db:generate && npm run mcp:build",
-    "nitro:verify": "npm run typecheck && npm run lint && npm test && npm run nitro:build",
+    "nitro:build": "npm run mcp:build",
+    "nitro:build:full": "npm run db:generate && npm run mcp:build",
+    "nitro:verify": "npm run nitro:build && npx vitest run apps/mcp/src/tool-catalog.test.ts",
+    "nitro:verify:full": "npm run typecheck && npm run lint && npm test && npm run nitro:build:full",
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc -b --pretty false",
     "test": "vitest run --passWithNoTests",
@@ -53,6 +58,7 @@
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
+    "@nitrostack/cli": "1.0.14",
     "@playwright/test": "1.62.0",
     "@types/node": "20.19.43",
     "@vitest/coverage-v8": "4.1.10",

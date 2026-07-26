@@ -10,7 +10,7 @@ import type {
   DuplicateCandidate,
   OverlapCandidate,
 } from '@immunograph/algorithms';
-import { loadReferenceBundle } from '@immunograph/database';
+import { loadReferenceBundle } from '@immunograph/database/mcp';
 import { ToolDecorator as Tool } from '@nitrostack/core';
 import type { ExecutionContext } from '@nitrostack/core';
 import { z } from 'zod';

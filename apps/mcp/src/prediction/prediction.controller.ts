@@ -6,7 +6,7 @@ import {
   SYNTHETIC_BINDING_ALGORITHM_VERSION,
   validateFasta,
 } from '@immunograph/algorithms';
-import { loadReferenceBundle } from '@immunograph/database';
+import { loadReferenceBundle } from '@immunograph/database/mcp';
 import { ControllerDecorator, ToolDecorator } from '@nitrostack/core';
 import type { ExecutionContext } from '@nitrostack/core';
 import { createHash } from 'node:crypto';

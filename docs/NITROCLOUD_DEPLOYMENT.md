@@ -23,6 +23,11 @@ NitroCloud build command:
 npm run nitro:build
 ```
 
+This is intentionally an MCP-only build. It compiles the shared, algorithms,
+database fixture/reference, and MCP packages without running Prisma generation.
+Use `npm run nitro:build:full` only for environments that have a working Prisma
+CLI/runtime and need the API database client generated during the build.
+
 NitroCloud start command:
 
 ```text
@@ -65,7 +70,6 @@ Set these non-secret values in NitroCloud:
 NODE_ENV=production
 LOG_LEVEL=info
 HOST=0.0.0.0
-PORT=3000
 MCP_TRANSPORT_TYPE=http
 EXECUTION_MODE=HYBRID
 DEMO_MODE=true

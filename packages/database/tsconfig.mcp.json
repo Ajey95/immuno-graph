@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "include": [
+    "src/mcp.ts",
+    "src/fixture-loader.ts",
+    "src/fixture-validation.ts",
+    "src/profile-loader.ts",
+    "src/reference-loader.ts",
+    "src/reference-validation.ts",
+    "src/validation.ts"
+  ],
+  "exclude": ["src/**/*.test.ts"]
+}

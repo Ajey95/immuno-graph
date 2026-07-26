@@ -11,10 +11,15 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./mcp": {
+      "types": "./dist/mcp.d.ts",
+      "import": "./dist/mcp.js"
     }
   },
   "scripts": {
     "build": "tsc -b",
+    "build:mcp": "tsc -p tsconfig.mcp.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "db:generate": "tsx src/prisma-command.ts generate --schema prisma/schema.prisma",
     "db:migrate": "tsx src/prisma-command.ts migrate deploy --schema prisma/schema.prisma",

@@ -14,7 +14,7 @@ import {
   loadProfileVersion,
   loadReferenceBundle,
   rankingProfileSchema,
-} from '@immunograph/database';
+} from '@immunograph/database/mcp';
 import { ControllerDecorator, ToolDecorator } from '@nitrostack/core';
 import type { ExecutionContext } from '@nitrostack/core';
 import { z } from 'zod';

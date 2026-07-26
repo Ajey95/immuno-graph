@@ -2,7 +2,7 @@ import 'reflect-metadata';
 
 import { buildTools, getModuleMetadata, McpApplicationFactory } from '@nitrostack/core';
 import type { ExecutionContext, JsonValue, Logger } from '@nitrostack/core';
-import { loadFixtureRegistry } from '@immunograph/database';
+import { loadFixtureRegistry } from '@immunograph/database/mcp';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { z } from 'zod';
 

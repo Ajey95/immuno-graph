@@ -4,7 +4,7 @@ import {
   matchFixture,
   type LoadedFixtureCase,
   type LoadedFixtureRegistry,
-} from '@immunograph/database';
+} from '@immunograph/database/mcp';
 
 import type { CapabilityPort } from './capability-port.js';
 import { ToolExecutionError } from './executor.js';

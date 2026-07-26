@@ -17,12 +17,19 @@ const httpHost =
   process.env.HOST ?? process.env.MCP_HOST ?? (nodeEnv === 'production' ? '0.0.0.0' : '127.0.0.1');
 const defaultHttpPort = nodeEnv === 'production' ? 3000 : 3001;
 const httpPort = Number(process.env.PORT ?? process.env.MCP_PORT ?? defaultHttpPort);
+const resourceHost = httpHost === '0.0.0.0' ? 'localhost' : httpHost;
 const resourceUri =
+  process.env.MCP_RESOURCE_URI ??
+  process.env.PUBLIC_MCP_URL ??
   process.env.OAUTH_RESOURCE_URI ??
   process.env.RESOURCE_URI ??
-  `http://${httpHost}:${httpPort}/mcp`;
+  `http://${resourceHost}:${httpPort}/mcp`;
 const authorizationServer =
-  process.env.OAUTH_AUTH_SERVER ?? process.env.AUTH_SERVER_URL ?? new URL(resourceUri).origin;
+  process.env.OAUTH_AUTHORIZATION_SERVER ??
+  process.env.OAUTH_AUTH_SERVER ??
+  process.env.AUTH_SERVER_URL ??
+  process.env.TOKEN_ISSUER ??
+  new URL(resourceUri).origin;
 
 @McpApp({
   module: AppModule,

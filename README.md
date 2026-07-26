@@ -125,8 +125,8 @@ npm run dev
 ```
 
 Run `npm run db:generate` after a dependency-only install or a Prisma schema
-change. Production builds perform this generation automatically after the full
-workspace source has been copied.
+change. Full API/database production builds use `npm run nitro:build:full`;
+the NitroCloud MCP build intentionally avoids Prisma generation.
 
 `npm run dev` starts the web app, Fastify API, and NitroStack MCP server together. Defaults are web `5173`, API `3000`, and MCP `3001`. The API endpoint can be changed with `MCP_SERVER_URL`.
 
@@ -153,7 +153,6 @@ Recommended cloud environment:
 ```env
 NODE_ENV=production
 HOST=0.0.0.0
-PORT=3000
 MCP_TRANSPORT_TYPE=http
 IEDB_LIVE_ENABLED=true
 IEDB_POPULATION_COVERAGE_ENABLED=true
@@ -169,6 +168,8 @@ Verify and build only the MCP app:
 npm run nitro:verify
 npm start
 ```
+
+Do not set `PORT` in NitroCloud when the platform provides it automatically.
 
 Docker deployment:
 

@@ -1,4 +1,4 @@
-import { loadFixtureRegistry } from '@immunograph/database';
+import { loadFixtureRegistry } from '@immunograph/database/mcp';
 import { describe, expect, it } from 'vitest';
 
 import { LocalFixtureCapabilityPort } from './local-fixture-capability-port.js';
