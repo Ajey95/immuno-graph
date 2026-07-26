@@ -25,7 +25,17 @@ export default {
     dockerfile: 'Dockerfile.mcp',
   },
   deployment: {
-    artifact: 'apps/mcp',
-    include: ['apps/mcp', 'packages/shared', 'packages/algorithms', 'packages/database', 'data'],
+    artifact: '.',
+    include: [
+      'package.json',
+      'package-lock.json',
+      'nitrostack.config.ts',
+      'tsconfig.json',
+      'tsconfig.base.json',
+      'apps',
+      'packages',
+      'data',
+      'Dockerfile.mcp',
+    ],
   },
 };
