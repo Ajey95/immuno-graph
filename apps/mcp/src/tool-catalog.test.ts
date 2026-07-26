@@ -644,6 +644,192 @@ describe('MCP tool catalog', () => {
     });
   });
 
+  it('exports the final research package as an actual zip archive for MCP/LLM clients', async () => {
+    const result = await toolByName('export_research_package').execute(
+      {
+        runId: 'run-1',
+        idempotencyKey: 'research-package-run-1',
+        includeStructure: true,
+        includeChemistry: true,
+        includeDocking: true,
+        includeAgentTrace: true,
+      },
+      createContext(),
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: {
+        artifact: {
+          mediaType: 'application/zip',
+          reference: 'mcp://research-packages/run-1/research-package.zip',
+        },
+        includesCsvExports: true,
+        includesAgentTrace: true,
+      },
+    });
+    if (typeof result === 'object' && result !== null && 'data' in result) {
+      const data = result.data as {
+        artifact: { contentBase64: string; byteLength: number; sha256: string };
+      };
+      const zip = Buffer.from(data.artifact.contentBase64, 'base64');
+      expect(zip.byteLength).toBe(data.artifact.byteLength);
+      expect(zip.subarray(0, 4).toString('hex')).toBe('504b0304');
+      const zipListing = zip.toString('latin1');
+      for (const requiredEntry of [
+        'manifest.json',
+        'project.json',
+        'run.json',
+        'configuration.json',
+        'inputs/original-fasta.fasta',
+        'predictions/connector-provenance.json',
+        'candidates/ranked-candidates.json',
+        'construct/construct.fasta',
+        'evidence/workflow-trace.json',
+        'reports/summary.md',
+        'reports/report.csv',
+        'checksums.json',
+      ]) {
+        expect(zipListing).toContain(requiredEntry);
+      }
+      expect(zipListing).not.toMatch(/^\s*\{/u);
+    }
+  });
+
+  it('exports persisted API run snapshot data inside the MCP research package zip', async () => {
+    const result = await toolByName('export_research_package').execute(
+      {
+        runId: 'run-1',
+        idempotencyKey: 'research-package-run-1',
+        includeStructure: true,
+        includeChemistry: true,
+        includeDocking: true,
+        includeAgentTrace: true,
+        packageSnapshot: {
+          project: { id: 'project-1', name: 'Persisted Immunology Project' },
+          run: { id: 'run-1', executionMode: 'HYBRID', quality: 'COMPLETE' },
+          configuration: { requestedExecutionMode: 'HYBRID' },
+          originalFasta: '>spike-demo\nMFVFLVLLPLVSSQCVNLTTRTQLPPAYTNSFTRGVY\n',
+          normalizedSequence: { sha256: 'a'.repeat(64), length: 40 },
+          inputChecksums: { originalFasta: 'b'.repeat(64), normalizedSequence: 'a'.repeat(64) },
+          predictions: {
+            mhci: { observations: [{ peptide: 'YLQPRTFLL', percentileRank: 0.12 }] },
+            mhcii: { observations: [{ peptide: 'TQLPPAYTNSFTRGV', percentileRank: 1.8 }] },
+            bcell: { observations: [{ peptide: 'CVNLTTRTQ', score: 0.74 }] },
+            populationCoverage: [{ population: 'India', coverage: 0.62 }],
+            connectorProvenance: [{ connectorId: 'iedb', status: 'LIVE' }],
+          },
+          candidates: {
+            ranked: [{ candidateId: 'candidate-1', peptide: 'YLQPRTFLL', finalScore: 0.91 }],
+            shortlisted: [{ candidateId: 'candidate-1', peptide: 'YLQPRTFLL' }],
+            rejected: [],
+            evidenceLinks: [{ candidateId: 'candidate-1', observationIds: ['obs-1'] }],
+            csv: 'candidateId,peptide,finalScore\ncandidate-1,YLQPRTFLL,0.91\n',
+          },
+          structure: {
+            structures: [{ structureId: 'AF-P0DTC2-F1', source: 'AlphaFold DB' }],
+            epitopeStructureMap: [{ candidateId: 'candidate-1', residueRange: '10-18' }],
+            surfaceAccessibility: [{ candidateId: 'candidate-1', score: 0.66 }],
+            structureConfidence: [{ candidateId: 'candidate-1', plddt: 82 }],
+          },
+          compounds: {
+            compounds: [{ compoundId: '2244', name: 'aspirin' }],
+            descriptors: [{ compoundId: '2244', molecularWeight: 180.16 }],
+            ligandPreparation: [{ compoundId: '2244', artifactRef: 'docking/ligand.pdbqt' }],
+          },
+          docking: {
+            receptorPdbqt: 'REMARK persisted receptor\n',
+            ligandPdbqt: 'REMARK persisted ligand\n',
+            dockingOutputPdbqt: 'REMARK VINA RESULT: -6.300 0.000 0.000\n',
+            dockingPoses: [{ poseId: 'pose-1', affinityKcalMol: -6.3 }],
+            dockingSummary: { bestAffinityKcalMol: -6.3 },
+            dockingProvenance: { connectorId: 'vina', status: 'LIVE' },
+            dockingViewPngBase64:
+              'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lhQ3TAAAAABJRU5ErkJggg==',
+          },
+          construct: {
+            fasta: '>construct_run_1\nYLQPRTFLL\n',
+            json: { selectedCandidateIds: ['candidate-1'] },
+            optimization: { method: 'genetic-algorithm', selectedCandidateIds: ['candidate-1'] },
+          },
+          evidence: {
+            evidenceGraph: { nodes: [{ id: 'candidate-1' }], edges: [] },
+            workflowTrace: { stages: [{ stageKey: 'ranking', status: 'SUCCEEDED' }] },
+            agentTrace: { steps: [{ agentId: 'ranking', decision: 'CONTINUE' }] },
+            approvals: [{ approvalType: 'SHORTLIST', decision: 'APPROVED' }],
+            auditEvents: [{ eventType: 'artifact.created' }],
+          },
+          reports: {
+            summaryMarkdown: '# Persisted Summary\n',
+            report: { runId: 'run-1', candidateCount: 1 },
+            limitationsMarkdown: '# Limitations\n',
+            reportCsv: 'candidateId,peptide\ncandidate-1,YLQPRTFLL\n',
+          },
+        },
+      },
+      createContext(),
+    );
+
+    expect(result).toMatchObject({ ok: true });
+    if (typeof result === 'object' && result !== null && 'data' in result) {
+      const data = result.data as { artifact: { contentBase64: string } };
+      const zip = Buffer.from(data.artifact.contentBase64, 'base64');
+      const zipListing = zip.toString('latin1');
+      for (const requiredEntry of [
+        'manifest.json',
+        'project.json',
+        'run.json',
+        'configuration.json',
+        'inputs/original-fasta.fasta',
+        'inputs/normalized-sequence.json',
+        'inputs/input-checksums.json',
+        'predictions/mhci.json',
+        'predictions/mhcii.json',
+        'predictions/bcell.json',
+        'predictions/population-coverage.json',
+        'predictions/connector-provenance.json',
+        'candidates/ranked-candidates.json',
+        'candidates/shortlisted-candidates.json',
+        'candidates/rejected-candidates.json',
+        'candidates/candidate-evidence-links.json',
+        'candidates/candidates.csv',
+        'structure/structures.json',
+        'structure/epitope-structure-map.json',
+        'structure/surface-accessibility.json',
+        'structure/structure-confidence.json',
+        'compounds/compounds.json',
+        'compounds/descriptors.json',
+        'compounds/ligand-preparation.json',
+        'docking/receptor.pdbqt',
+        'docking/ligand.pdbqt',
+        'docking/docking-output.pdbqt',
+        'docking/docking-poses.json',
+        'docking/docking-summary.json',
+        'docking/docking-provenance.json',
+        'docking/docking-view.png',
+        'construct/construct.fasta',
+        'construct/construct.json',
+        'construct/construct-optimization.json',
+        'evidence/evidence-graph.json',
+        'evidence/workflow-trace.json',
+        'evidence/agent-trace.json',
+        'evidence/approvals.json',
+        'evidence/audit-events.json',
+        'reports/summary.md',
+        'reports/report.json',
+        'reports/limitations.md',
+        'reports/report.csv',
+        'checksums.json',
+      ]) {
+        expect(zipListing).toContain(requiredEntry);
+      }
+      expect(zipListing).toContain('Persisted Immunology Project');
+      expect(zipListing).toContain('YLQPRTFLL');
+      expect(zipListing).toContain('genetic-algorithm');
+      expect(zipListing).toContain('SHORTLIST');
+    }
+  });
+
   it('returns deterministic fixture-shaped outputs for mandatory structure, chemistry, and docking tools', async () => {
     const structure = await toolByName('fetch_structure').execute(
       {

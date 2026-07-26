@@ -23,6 +23,11 @@ This checklist mirrors [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md). Check a
 
 Implementation status summary: the offline fixture/synthetic path, REST API, MCP tools, MCP-visible PRD v1.1 agentic workflow descriptor, bounded LangGraph agent workflow, database repositories, core algorithms, project dashboard, workflow graph, evidence graph, candidate review, shortlist approval, diagnostics, JSON/CSV report artifacts, mandatory research-package ZIP export with checksums, evidence-graph/workflow-trace artifact exports, fixture-labeled docking PDBQT/JSON/PNG package artifacts, API liveness probe, API-owned `LIVE -> CACHED` reuse, IEDB MHC-I/MHC-II live adapters, optional local MHCflurry MHC-I adapter, official IEDB standalone population-coverage adapter, mixed-method hybrid routing, and live-capable RCSB/AlphaFold/PubChem/Open Babel/RDKit/Vina/PLIP/fpocket/FreeSASA/Mol* MCP adapters are implemented. Public deployment hardening and full browser/E2E rehearsal remain incomplete.
 
+Post-merge verification on 2026-07-26: `npm run build`, `npm run typecheck`, and
+`npm run lint` passed; all 74 test files and 325 tests passed. The production MCP HTTP
+smoke test passed health, initialization, and discovery of all 46 tools, including the
+agentic workflow, structure, docking, and research-package export tools.
+
 ## Phase 0 — Foundation
 
 - [x] Initialize npm workspaces for `apps/*` and `packages/*`.

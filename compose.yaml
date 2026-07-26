@@ -8,15 +8,15 @@ services:
     environment:
       NODE_ENV: production
       HOST: 0.0.0.0
-      PORT: 3001
+      PORT: 3000
       MCP_HOST: 0.0.0.0
-      MCP_PORT: 3001
-      MCP_TRANSPORT_TYPE: dual
+      MCP_PORT: 3000
+      MCP_TRANSPORT_TYPE: http
       IEDB_LIVE_ENABLED: ${IEDB_LIVE_ENABLED:-false}
       MHCFLURRY_ENABLED: ${MHCFLURRY_ENABLED:-false}
       DEMO_MODE: ${DEMO_MODE:-true}
     expose:
-      - '3001'
+      - '3000'
     restart: unless-stopped
 
   api:
@@ -29,7 +29,7 @@ services:
       API_PORT: 3000
       DATABASE_URL: file:/data/immunograph.db
       ARTIFACT_ROOT: /data/artifacts
-      MCP_SERVER_URL: http://mcp:3001/mcp
+      MCP_SERVER_URL: http://mcp:3000/mcp
       DEMO_MODE: ${DEMO_MODE:-true}
       LLM_ENABLED: 'false'
     volumes:

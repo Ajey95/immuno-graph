@@ -1276,6 +1276,92 @@ export const describeAgenticWorkflowContract = defineContract({
 });
 
 const agentModeSchema = z.enum(['LLM', 'DETERMINISTIC']);
+const persistedPackageSnapshotSchema = z
+  .object({
+    project: jsonRecord.optional(),
+    run: jsonRecord.optional(),
+    configuration: jsonRecord.optional(),
+    originalFasta: z.string().optional(),
+    normalizedSequence: jsonRecord.optional(),
+    inputChecksums: jsonRecord.optional(),
+    predictions: z
+      .object({
+        mhci: jsonRecord.optional(),
+        mhcii: jsonRecord.optional(),
+        bcell: jsonRecord.optional(),
+        populationCoverage: z.unknown().optional(),
+        connectorProvenance: z.unknown().optional(),
+      })
+      .strict()
+      .optional(),
+    candidates: z
+      .object({
+        ranked: z.unknown().optional(),
+        shortlisted: z.unknown().optional(),
+        rejected: z.unknown().optional(),
+        evidenceLinks: z.unknown().optional(),
+        csv: z.string().optional(),
+      })
+      .strict()
+      .optional(),
+    structure: z
+      .object({
+        structures: z.unknown().optional(),
+        epitopeStructureMap: z.unknown().optional(),
+        surfaceAccessibility: z.unknown().optional(),
+        structureConfidence: z.unknown().optional(),
+      })
+      .strict()
+      .optional(),
+    compounds: z
+      .object({
+        compounds: z.unknown().optional(),
+        descriptors: z.unknown().optional(),
+        ligandPreparation: z.unknown().optional(),
+      })
+      .strict()
+      .optional(),
+    docking: z
+      .object({
+        receptorPdbqt: z.string().optional(),
+        ligandPdbqt: z.string().optional(),
+        dockingOutputPdbqt: z.string().optional(),
+        dockingPoses: z.unknown().optional(),
+        dockingSummary: z.unknown().optional(),
+        dockingProvenance: z.unknown().optional(),
+        dockingViewPngBase64: z.string().optional(),
+      })
+      .strict()
+      .optional(),
+    construct: z
+      .object({
+        fasta: z.string().optional(),
+        json: jsonRecord.optional(),
+        optimization: z.unknown().optional(),
+      })
+      .strict()
+      .optional(),
+    evidence: z
+      .object({
+        evidenceGraph: jsonRecord.optional(),
+        workflowTrace: jsonRecord.optional(),
+        agentTrace: jsonRecord.optional(),
+        approvals: z.unknown().optional(),
+        auditEvents: z.unknown().optional(),
+      })
+      .strict()
+      .optional(),
+    reports: z
+      .object({
+        summaryMarkdown: z.string().optional(),
+        report: jsonRecord.optional(),
+        limitationsMarkdown: z.string().optional(),
+        reportCsv: z.string().optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
 const reactLoopSchema = z.tuple([
   z.literal('PLAN'),
   z.literal('ACT'),
@@ -1373,6 +1459,7 @@ export const exportResearchPackageContract = defineContract({
       includeChemistry: z.boolean(),
       includeDocking: z.boolean(),
       includeAgentTrace: z.boolean(),
+      packageSnapshot: persistedPackageSnapshotSchema.optional(),
     })
     .strict(),
   dataSchema: z

@@ -95,6 +95,7 @@ const NODE_ORDER = [
 ] as const;
 
 const APPROVAL_GATES = new Set(['intake-policy', 'docking', 'verifier-critic', 'reporting']);
+const SUPERVISOR_TOOL_NAMES = ['describe_agentic_workflow', 'run_agentic_workflow'] as const;
 
 export async function runLangGraphAgentWorkflow(
   input: RunAgenticWorkflowInput,
@@ -122,7 +123,9 @@ export async function runLangGraphAgentWorkflow(
     if (agent === undefined) continue;
     graph = graph.addNode(agentId, (state: AgentState) => {
       const node = manifest.workflowPlan.nodes.find((candidate) => candidate.agentId === agentId);
-      const toolNames = (node?.toolNames ?? []).filter((toolName) =>
+      const configuredToolNames =
+        node?.toolNames ?? (agentId === 'supervisor-orchestrator' ? SUPERVISOR_TOOL_NAMES : []);
+      const toolNames = configuredToolNames.filter((toolName) =>
         state.approvedToolNames.includes(toolName),
       );
       const approvalRequired = state.requireHumanApproval && APPROVAL_GATES.has(agentId);
