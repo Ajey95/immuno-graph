@@ -60,9 +60,9 @@ flowchart TD
     D --> E["Normalize scores and assess consensus / coverage"]
     E --> F["Apply constraints and rank candidates"]
     F --> G["Generate explanations, exports and research ZIP"]
-    F -. "optional supporting review" .-> H["Structure tools"]
+    F -.->|Optional supporting review| H["Structure tools"]
     H -.-> I["Chemistry and docking tools"]
-    I -. "supplied artifacts" .-> G
+    I -.->|Supplied artifacts| G
 ```
 
 The arrows show a **recommended sequence of separate MCP tool calls by a client**. The server does not automatically execute the full chain. The client supplies the outputs and provenance needed by each later tool.
