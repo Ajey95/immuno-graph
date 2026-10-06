@@ -23,6 +23,13 @@ ImmunoGraph exposes sequence validation, prediction adapters, evidence processin
 
 A protein sequence is only the starting point for an epitope study. Researchers often have to move between sequence validators, binding predictors, HLA coverage calculations, structure databases, chemistry tools, docking programs, and spreadsheets. These systems use different inputs, score scales, identifiers, and output formats. When results are copied between them, the source, configuration, and difference between a live calculation and an offline demonstration can become hard to audit.
 
+Published studies show how many steps a real candidate search can require:
+
+| Research case | What the researchers had to combine |
+| --- | --- |
+| [Grifoni et al., *Cell Host & Microbe* (2020)](https://doi.org/10.1016/j.chom.2020.03.002) | To identify candidate SARS-CoV-2 immune targets, the team compared SARS-CoV and SARS-CoV-2 sequences, used known SARS epitopes, predicted B- and T-cell epitopes, and checked conservation. These were candidate targets for follow-up, not a demonstrated vaccine. |
+| [Ferreira et al., *PeerJ* (2021), EpiCurator](https://pmc.ncbi.nlm.nih.gov/articles/PMC8641484/) | The team analyzed 1,652 SARS-CoV-2 genomes from Brazil and combined epitope prediction with conservation, human-sequence homology checks, HLA population coverage, and computational construct assessment. Their paper explicitly notes that epitope curation required different web servers. |
+
 That fragmentation makes a candidate shortlist difficult to reproduce and review. **ImmunoGraph addresses the integration and evidence-handling problem**; it does not determine whether a candidate is safe or effective in people.
 
 ## The MCP solution
@@ -149,6 +156,14 @@ The server registers **46 tools in seven modules**. The descriptions below refer
 | `run_docking` | Invokes configured AutoDock Vina or returns deterministic fixture-labelled poses. |
 | `cluster_docking_poses` | Groups supplied pose data into representative pose clusters. |
 | `extract_interactions` | Invokes configured PLIP or returns fixture-labelled interaction summaries. |
+
+#### Example docking visualization
+
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/549ff61f-1262-4627-be98-44ea9b82455d" alt="Archived ImmunoGraph docking visualization" width="620" />
+</p>
+
+<p align="center"><em>Docking visualization from the <a href="oldreadme.md#docking-visualization">archived README</a>. It illustrates an earlier project example; this README does not claim a new live docking run or experimental binding validation.</em></p>
 
 ### Reports and utilities · 9 tools
 
