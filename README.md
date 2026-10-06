@@ -1,542 +1,145 @@
+# 🧬 ImmunoGraph MCP
+
 <p align="center">
-  <img src="https://github.com/user-attachments/assets/b9c15223-786f-4448-bbdd-64f2b760b78f" alt="ImmunoGraph NitroStack MCP" width="100%">
+  <strong>Typed research tools for computational epitope prioritization</strong><br />
+  One MCP server · Explicit provenance · Reproducible offline demonstrations
 </p>
 
-# ImmunoGraph Studio
+<p align="center">
+  <img alt="MCP server" src="https://img.shields.io/badge/MCP-single%20server-6144b1?style=flat-square" />
+  <img alt="46 registered tools" src="https://img.shields.io/badge/tools-46-216e8a?style=flat-square" />
+  <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5.x-3178c6?style=flat-square" />
+  <img alt="NitroStack" src="https://img.shields.io/badge/runtime-NitroStack-243b53?style=flat-square" />
+</p>
 
-**An MCP-first, multi-agent research workspace for auditable epitope prioritization, structure review, docking preparation, and evidence-governed scientific reporting.**
+ImmunoGraph exposes sequence validation, prediction adapters, evidence processing, structure and chemistry utilities, docking adapters, and research-package export through **one NitroStack MCP application**. An MCP host can discover and call the tools individually. The server contains 46 registered tools across seven modules; the modules are **not** separate MCP servers.
 
-ImmunoGraph Studio helps a researcher move from a pathogen protein sequence to a reviewable computational research package. It combines a React researcher workspace, a Fastify workflow API, and one NitroStack MCP app that exposes typed scientific tools for immunoinformatics, evidence synthesis, structure, chemistry, docking, orchestration, and export.
+> [!IMPORTANT]
+> ImmunoGraph is computational research support. Its synthetic and fixture outputs are demonstrations, not experimental evidence. A candidate shortlist, docking pose, or generated report does not establish vaccine efficacy, safety, or clinical utility. Independent scientific review and experimental validation are required.
 
-The cloud-facing artifact is the NitroStack MCP app. The web UI and REST API provide the full local product experience, while the MCP app is the deployable capability surface for NitroStack Cloud and external MCP hosts.
+**Jump to:** [Capabilities](#capabilities) · [Architecture](#architecture) · [Quick start](#quick-start) · [MCP usage](#mcp-usage) · [Execution modes](#execution-modes-and-provenance) · [Current limits](#current-limits)
 
-> ImmunoGraph is computational decision-support software. It does not validate a vaccine, predict clinical efficacy, establish safety, or replace expert scientific review. All outputs require independent expert review and experimental validation.
+## What is in this repository?
 
-## Why This Exists
-
-The COVID-19 pandemic showed how quickly biological sequence data can arrive, but also how fragmented computational interpretation remains. A researcher may need separate tools for FASTA validation, epitope prediction, population coverage, protein structure lookup, molecular preparation, docking, evidence review, and final reporting.
-
-That fragmentation creates four problems:
-
-| Problem | ImmunoGraph response |
+| Item | Current implementation |
 | --- | --- |
-| Disconnected scientific tools | One MCP app exposes typed tools behind a single interface. |
-| Hard-to-reproduce analysis | Every run records inputs, configuration, provenance, approvals, and checksums. |
-| Opaque fallback behavior | Results are explicitly labeled as `LIVE`, `CACHED`, `SYNTHETIC`, `FIXTURE`, or `FAILED`. |
-| Manual evidence reconciliation | Deterministic ranking, consensus, confidence, constraints, and reports are produced from structured evidence. |
+| Deployable application | One MCP server, `immunograph-mcp`, built with NitroStack |
+| Interface | 46 typed MCP tools; no React workspace or Fastify API in this public branch |
+| Local computation | FASTA validation, peptide generation, normalization, consensus, constraints, ranking, and report assembly |
+| External capabilities | Optional IEDB, MHCflurry, RCSB PDB, AlphaFold DB, PubChem, and local scientific binaries |
+| Offline data | Versioned profiles, reference data, synthetic values, and exact-match fixtures under `data/` |
+| Workflow | A LangGraph-based trace of named agent stages; see [Agent workflow](#agent-workflow) for its execution boundary |
 
-## What It Does
+The previous, broader product README is preserved in [oldreadme.md](oldreadme.md). It describes a larger UI/API workspace that is not present in this branch.
 
-ImmunoGraph turns protein FASTA input and a researcher-approved configuration into an evidence-backed candidate shortlist and exportable research package.
+## Capabilities
 
-Current capabilities include:
+| Module | Tools | Examples | Current execution boundary |
+| --- | ---: | --- | --- |
+| Prediction | 6 | `validate_sequence`, `generate_candidate_peptides`, `predict_mhci`, `predict_mhcii`, `predict_bcell` | IEDB and MHCflurry are optional; GraphBepi is fixture-only. A separate synthetic predictor is available for demonstrations. |
+| Evidence | 9 | `normalize_scores`, `compute_consensus`, `rank_candidates`, `calculate_population_coverage` | Deterministic calculations use supplied evidence; live population coverage requires explicit configuration. |
+| Constraints | 5 | `validate_thresholds`, `detect_overlapping_epitopes`, `apply_constraint_rules` | Local rule and overlap calculations. |
+| Structure | 7 | `fetch_structure`, `map_epitopes_to_structure`, `detect_binding_pockets` | RCSB/AlphaFold lookups and FreeSASA/fpocket paths require enabled connectors or local binaries; fixture paths exist. |
+| Chemistry | 5 | `fetch_compound`, `calculate_molecular_descriptors`, `prepare_ligand` | PubChem, RDKit, and Open Babel paths require explicit setup; fixture paths exist. |
+| Docking | 5 | `prepare_receptor`, `run_docking`, `extract_interactions` | AutoDock Vina and PLIP paths require local binaries; the offline path returns labelled fixture results. |
+| Reports & workflow | 9 | `generate_report`, `export_research_package`, `run_agentic_workflow` | Reports and ZIPs are assembled from supplied data; the agent workflow currently emits a trace rather than executing the listed scientific tools. |
 
-- FASTA validation, normalization, hashing, and peptide generation.
-- MHC-I, MHC-II, B-cell, population coverage, consensus, confidence, and ranking workflows.
-- Live-capable IEDB binding and population coverage connectors.
-- Optional local MHCflurry connector when the CLI and models are installed.
-- Fixture-only GraphBepi path for MVP B-cell demonstration reliability.
-- Structure tools for RCSB PDB, AlphaFold DB, epitope mapping, surface accessibility, confidence, pockets, and Mol* view-state generation.
-- Chemistry and docking tools for PubChem, compound validation, descriptors, ligand/receptor preparation, docking orchestration, pose clustering, and interaction extraction.
-- Bounded agent workflow with optional LLM-backed routing and deterministic fallback.
-- Research package ZIP export containing inputs, predictions, candidates, construct files, docking artifacts, evidence, reports, approvals, audit events, CSV exports, and checksums.
+Tool inputs are validated with Zod. Tool responses include structured success or failure data and metadata such as the tool name, run ID, timestamps, and input/output hashes. The complete schemas live in [`src/modules/tool-contracts.ts`](src/modules/tool-contracts.ts) and the individual controllers in [`src/modules/`](src/modules/).
 
 ## Architecture
 
 ```mermaid
-flowchart TD
-    R[Researcher] --> UI[ImmunoGraph Studio UI]
-    UI --> API[Fastify REST API]
-
-    API --> L[Project and run lifecycle]
-    API --> DB[(SQLite persistence)]
-    API --> SSE[Idempotency and SSE events]
-    API --> ART[Artifact download]
-    API --> MCP[One NitroStack MCP App]
-
-    subgraph MCP_APP[One NitroStack MCP App]
-        MCP --> SUP[Supervisor / Orchestrator Agent]
-        SUP --> SEQ[Sequence Validation Agent]
-        SUP --> IMM[Immunology Agent]
-        SUP --> STR[Structure Agent]
-        SUP --> CHEM[Chemistry / Docking Agent]
-        SUP --> RANK[Ranking Agent]
-        SUP --> VER[Verifier Agent]
-        SUP --> REP[Reporting Agent]
-
-        SEQ --> IT[Immunoinformatics Tools]
-        IMM --> IT
-        IMM --> ET[Evidence Tools]
-        STR --> ST[Structure Tools]
-        CHEM --> CT[Chemistry Tools]
-        CHEM --> DT[Docking Tools]
-        RANK --> ET
-        RANK --> XT[Constraint Tools]
-        VER --> GOV[Evidence / Governance Tools]
-        REP --> RT[Report / Export Tools]
-    end
-
-    IT --> LIVE[Live connectors]
-    ET --> CACHE[(SQLite cache)]
-    ST --> LIVE
-    CT --> LIVE
-    DT --> LIVE
-    RT --> PKG[Research package artifacts]
-    GOV --> PKG
-    LIVE --> FIX[Approved fixtures and synthetic fallback]
+flowchart LR
+    Host["MCP host / research client"] --> Server["immunograph-mcp<br/>one NitroStack server"]
+    Server --> Tools["46 typed tools<br/>7 modules"]
+    Tools --> Algorithms["Local algorithms<br/>and profiles"]
+    Tools --> Live["Optional live services<br/>and local binaries"]
+    Tools --> Fixtures["Synthetic data<br/>and exact-match fixtures"]
+    Tools --> Export["Reports, traces<br/>and research ZIP"]
+    Server -.-> Graph["LangGraph agent-stage trace"]
 ```
 
-The API owns workflow lifecycle, persistence, transactions, idempotency, and browser-facing contracts. The MCP app owns typed scientific capabilities. The algorithm package remains pure TypeScript with no database, HTTP, Fastify, NitroStack, or LLM dependency.
+The MCP server is registered in [`src/app.module.ts`](src/app.module.ts). Algorithms and data loaders are under `src/lib/`; tool handlers and connector adapters are under `src/modules/`. `data/` contains the reference manifests, profiles, schemas, and offline fixtures needed by the server. Run the application from the repository root so those files resolve correctly.
 
-## Repository Map - According to the branches.
+## Quick start
 
-| Path | Responsibility |
-| --- | --- |
-| `apps/web/` | React/Vite researcher workspace with dashboard, project views, workflow visualization, candidates, evidence, reports, settings, and diagnostics. |
-| `apps/api/` | Fastify REST API, application services, workflow lifecycle, repositories, SSE events, artifacts, diagnostics, and MCP delegation. |
-| `apps/mcp/` | NitroStack MCP app, bounded agent workflow, scientific tool controllers, connectors, provenance, and export tools. |
-| `packages/shared/` | Zod schemas, shared DTOs, API contracts, and typed cross-package models. |
-| `packages/algorithms/` | Pure deterministic algorithms for validation, peptides, normalization, consensus, ranking, confidence, overlap handling, and optimization. |
-| `packages/database/` | Prisma schema, SQLite repositories, migrations, seed support, fixture/profile loaders, and validation. |
-| `data/fixtures/` | Approved deterministic demo fixtures for offline replay. |
-| `data/profiles/` | Immutable MVP profiles and biological constraint configuration. |
-| `data/reference/` | Small local reference datasets such as amino acid and HLA allele references. |
-| `docs/` | Product, architecture, API, MCP, data, agent, deployment, limitation, and testing documentation. |
-| `assets/` | README and presentation assets. |
+**Requirements:** Node.js 20.19.x and npm 10.x are the documented project target. Live scientific features additionally need their respective services, model downloads, or local binaries.
 
-## MCP Tool Surface
-
-The NitroStack MCP app exposes the project as one deployable app with multiple logical laboratories.
-
-| Tool group | Representative tools |
-| --- | --- |
-| Immunoinformatics | `validate_sequence`, `generate_candidate_peptides`, `predict_mhci`, `predict_mhcii`, `predict_bcell`, `predict_synthetic_binding` |
-| Evidence | `normalize_scores`, `compute_consensus`, `compute_consensus_batch`, `calculate_population_coverage`, `rank_candidates`, `optimize_shortlist_coverage`, `calibrate_confidence`, `optimize_construct_genetic` |
-| Constraints | `detect_overlapping_epitopes`, `remove_duplicate_candidates`, `validate_thresholds`, `categorize_candidates`, `apply_constraint_rules` |
-| Structure | `fetch_structure`, `validate_structure`, `map_epitopes_to_structure`, `calculate_surface_accessibility`, `calculate_structure_confidence`, `detect_binding_pockets`, `create_molstar_view` |
-| Chemistry | `fetch_compound`, `validate_compound`, `deduplicate_compounds`, `calculate_molecular_descriptors`, `prepare_ligand` |
-| Docking | `prepare_receptor`, `validate_docking_box`, `run_docking`, `cluster_docking_poses`, `extract_interactions` |
-| Agent workflow | `describe_agentic_workflow`, `run_agentic_workflow`, `chat_with_research_agent` |
-| Reports and export | `generate_report`, `export_candidates`, `visualize_results`, `explain_candidate`, `export_workflow_trace`, `export_research_package` |
-
-Each tool validates input schemas, returns structured output, and preserves provenance. Synthetic and fixture outputs are never relabeled as live scientific predictions.
-
-## Agentic Workflow
-
-ImmunoGraph uses bounded agents inside the single MCP app. Agents coordinate tool use; they do not invent scientific measurements.
-
-| Agent | Main responsibility |
-| --- | --- |
-| Supervisor / Orchestrator | Build a bounded plan, route work to allowed agents, enforce gates, and emit workflow trace events. |
-| Sequence Validation Agent | Validate FASTA input, normalize sequence data, and generate candidate peptide windows. |
-| Immunology Agent | Run or route MHC-I, MHC-II, B-cell, synthetic, fixture, and coverage tools according to execution policy. |
-| Structure Agent | Fetch structures, validate PDB/mmCIF content, map epitopes, compute structure confidence, and prepare Mol* views. |
-| Chemistry / Docking Agent | Fetch compounds, validate molecules, prepare ligands/receptors, validate docking boxes, and collect docking evidence. |
-| Ranking Agent | Combine evidence, apply constraints, rank candidates, calibrate confidence, and optimize shortlist/construct proposals. |
-| Verifier Agent | Check schemas, provenance, source labels, missing evidence, and approval boundaries before reporting. |
-| Reporting Agent | Generate summaries, exports, limitations, trace files, and the final research package. |
-
-When `LLM_ENABLED=true` and credentials are configured, LLM-backed agents may plan, route, summarize, and verify within strict tool allowlists. If LLM support is absent or invalid, deterministic routing remains available for safe workflows.
-
-## Execution Modes And Provenance
-
-Every result carries an explicit source status:
-
-| Status | Meaning |
-| --- | --- |
-| `LIVE` | Produced by a configured live connector during the run. |
-| `CACHED` | Reused from an exact cache match for a previous validated live result. |
-| `SYNTHETIC` | Produced by a deterministic offline demonstration predictor. `scientificUse=false`. |
-| `FIXTURE` | Replayed from an approved exact-match fixture. |
-| `FAILED` | No valid result was produced for that branch. |
-
-Run-level execution resolves to `LIVE`, `SYNTHETIC`, `FIXTURE`, or `HYBRID`. `AUTO` is a requested policy mode, not an evidence status.
-
-The default fallback policy is:
-
-```text
-Validate input
-  |
-  v
-Try live connector when enabled and available
-  |
-  |-- success --> persist provenance and cache
-  |
-  |-- unavailable / timeout / rate limit
-          |
-          v
-     synthetic allowed?
-          |
-          |-- yes --> deterministic synthetic demonstration output
-          |
-          |-- no
-                |
-                v
-           exact approved fixture?
-                |
-                |-- yes --> replay fixture
-                `-- no  --> fail closed
-```
-
-GraphBepi remains fixture-only in the MVP. MHCflurry reports `LIVE` only after its CLI and models are installed and `MHCFLURRY_ENABLED=true` is configured.
-
-## Research Package Export
-
-The final deliverable is a reviewable archive:
-
-```text
-research-package.zip
-├── manifest.json
-├── project.json
-├── run.json
-├── configuration.json
-├── inputs/
-│   ├── original-fasta.fasta
-│   ├── normalized-sequence.json
-│   └── input-checksums.json
-├── predictions/
-│   ├── mhci.json
-│   ├── mhcii.json
-│   ├── bcell.json
-│   ├── population-coverage.json
-│   └── connector-provenance.json
-├── candidates/
-│   ├── ranked-candidates.json
-│   ├── shortlisted-candidates.json
-│   ├── rejected-candidates.json
-│   └── candidate-evidence-links.json
-├── construct/
-│   ├── construct.fasta
-│   ├── construct.json
-│   └── construct-optimization.json
-├── evidence/
-│   ├── evidence-graph.json
-│   ├── workflow-trace.json
-│   ├── approvals.json
-│   └── audit-events.json
-├── reports/
-│   ├── summary.md
-│   ├── report.json
-│   ├── candidates.csv
-│   └── limitations.md
-└── checksums.json
-```
-
-This package is designed for review, not for automatic biological claims.
-## Screenshots
-
-
-### Research Projects Dashboard
-<img width="1600" height="1010" alt="image" src="https://github.com/user-attachments/assets/4287b084-88b9-411b-bf6a-3edb758f0ee3" />
-
-The Research Projects dashboard is the main ImmunoGraph workspace. It gives a quick overview of the current research state, including total projects, recent prioritization runs, and connector health.
-
-From this screen, users can:
-- Create a new immunoinformatics project.
-- Upload a FASTA sequence.
-- Open a recent project.
-- View diagnostics for MCP/API connector health.
-- Track run status such as queued, complete, failed, or awaiting shortlist approval.
-- Review project provenance, source mode, and last updated date.
-
-This view is designed for managing multiple epitope prioritization studies from one workspace.
-
----
-
-
-### Generated Artifacts
-<img width="1600" height="676" alt="image" src="https://github.com/user-attachments/assets/64535aac-1794-4ce3-968c-0c0cbf52f29e" />
-The Generated Artifacts screen shows the output files created by ImmunoGraph after a workflow run.
-
-Each artifact includes:
-- File name
-- Artifact type, such as `CSV`, `JSON`, `EVIDENCE_GRAPH`, or `WORKFLOW_TRACE`
-- File size
-- SHA-256 checksum
-- Download action
-
-This makes every generated research output inspectable, traceable, and reproducible. Users can download reports, evidence graphs, and workflow traces for downstream analysis, validation, or submission.
-
----
-
-### Docking Visualization
-<img width="1240" height="1540" alt="image" src="https://github.com/user-attachments/assets/549ff61f-1262-4627-be98-44ea9b82455d" />
-
-The docking visualization shows actual molecular docking output generated by ImmunoGraph.
-
-This screen visualizes:
-- RCSB `1UYD` receptor structure
-- PubChem `CID 2244` ligand
-- Docked poses from AutoDock Vina
-- Contact geometry inferred from PyMOL
-- Nearby pocket residues
-- Polar contact distances
-
-Each pose includes a receptor ribbon view, docked ligand position, nearby residue labels, and inferred polar contacts. The visualization helps researchers inspect whether a ligand pose is structurally plausible and which residues contribute to binding interactions.
-
----
-
-### Docking Pose Comparison
-<img width="1600" height="763" alt="image" src="https://github.com/user-attachments/assets/67d2c90b-7111-486b-ae64-e5821f95a1e5" />
-
-The docking pose comparison presents multiple docked ligand conformations side by side as separate ranked poses.
-
-For each pose, ImmunoGraph reports:
-- Closest nearby residues
-- Minimum residue distances
-- Ligand-residue polar contacts
-- Docking pocket orientation
-- Visual receptor-ligand alignment
-
-This helps compare candidate poses and understand how binding geometry changes across docking outputs.
-## Prerequisites
-
-Install only the components required for the capabilities you plan to use.
-
-| Capability | Requirements |
-| --- | --- |
-| Core workspace | Node.js `20.19.x`, npm `10.x` |
-| Database | SQLite through Prisma; no separate database server required |
-| IEDB live binding | Outbound HTTP access and `IEDB_LIVE_ENABLED=true` |
-| IEDB population coverage | IEDB standalone population coverage package or configured compatible endpoint |
-| MHCflurry | Python runtime, MHCflurry CLI, downloaded models, and `MHCFLURRY_ENABLED=true` |
-| Structure lookup | Outbound HTTP access to RCSB PDB and AlphaFold DB |
-| Chemistry lookup | Outbound HTTP access to PubChem |
-| Local chemistry/docking | Open Babel, RDKit, AutoDock Vina, PLIP, fpocket, and FreeSASA where those live paths are enabled |
-| NitroStack Cloud | GitHub import flow, Node.js 20 runtime, and repository-root deployment |
-
-## 🧬 Scientific Capabilities
-
-Our platform is organized into specialized scientific modules, each responsible for a distinct stage of the vaccine and therapeutic discovery pipeline.
-
-### Immunology
-
-Core immunoinformatics capabilities for identifying and evaluating immune targets.
-
-| Capability | Description |
-|------------|-------------|
-| FASTA Validation | Validates protein sequences before downstream analysis. |
-| Peptide Generation | Generates candidate peptide fragments from protein sequences. |
-| MHC-I Prediction | Predicts Class I HLA binding for CD8+ T-cell responses. |
-| MHC-II Prediction | Predicts Class II HLA binding for CD4+ T-cell responses. |
-| B-cell Prediction | Identifies potential antibody-recognized epitopes. |
-| Population Coverage | Estimates global and regional HLA population coverage. |
-| Consensus Scoring | Combines multiple prediction models into a unified ranking. |
-
----
-
-### Structural Biology
-
-Structure-aware analysis for validating epitope accessibility and protein context.
-
-| Capability | Description |
-|------------|-------------|
-| Protein Structure Retrieval | Retrieves experimentally determined protein structures. |
-| AlphaFold Support | Utilizes AlphaFold predicted protein models. |
-| PDB Support | Integrates Protein Data Bank (PDB) structures. |
-| Surface Accessibility | Determines whether epitopes are surface exposed. |
-| Confidence Analysis | Evaluates structural prediction confidence. |
-| Epitope Mapping | Maps predicted epitopes onto 3D protein structures. |
-
----
-
-### Chemistry & Docking
-
-Computational chemistry workflows for molecular interaction analysis.
-
-| Capability | Description |
-|------------|-------------|
-| Ligand Preparation | Cleans and optimizes ligand structures for docking. |
-| Protein Preparation | Prepares receptor structures for simulation. |
-| Molecular Docking | Predicts ligand–protein binding orientations. |
-| Interaction Analysis | Identifies hydrogen bonds, hydrophobic contacts, and key interactions. |
-| Binding Evaluation | Scores and ranks docking results based on predicted affinity. |
-
----
-
-### Evidence & Governance
-
-Scientific traceability and reproducibility across the discovery pipeline.
-
-| Capability | Description |
-|------------|-------------|
-| Provenance Tracking | Records the origin of every scientific result. |
-| Evidence Graph | Links predictions, datasets, models, and supporting evidence. |
-| Candidate Ranking | Prioritizes candidates using multi-factor evidence scoring. |
-| Audit Trail | Maintains complete execution history for reproducibility. |
-| Report Generation | Produces publication-ready scientific reports. |
-
----
-
-## 🎯 Design Principles
-
-The platform is built around modern AI engineering and computational biology best practices.
-
-| Principle | Description |
-|-----------|-------------|
-| Single Responsibility Principle | Each agent and MCP performs one well-defined scientific task. |
-| Explainable AI | Every prediction is accompanied by supporting evidence and rationale. |
-| Modular MCP Architecture | Independent scientific services communicate through standardized MCP interfaces. |
-| Scientific Reproducibility | Every experiment can be reproduced with identical inputs and parameters. |
-| Evidence-backed Decision Support | Recommendations are derived from verifiable scientific evidence rather than opaque model outputs. |
-| Human-in-the-loop Research | Researchers retain full oversight and control over every stage of the workflow. |
-## Quick Start
-
-```powershell
-npm install
-npm run db:migrate
-npm run db:seed
-npm run dev
-```
-
-Default local services:
-
-| Service | URL |
-| --- | --- |
-| Web UI | `http://localhost:5173` |
-| REST API | `http://127.0.0.1:3000` |
-| MCP endpoint | `http://127.0.0.1:3001/mcp` |
-
-Useful development commands:
-
-```powershell
-npm run typecheck
-npm run lint
-npm test
+```bash
+git clone https://github.com/Ajey95/immuno-graph.git
+cd immuno-graph
+npm ci
 npm run build
-npm run nitro:verify
+npm start
 ```
 
-## Configuration
+The build compiles the MCP package. On startup, NitroStack registers the 46 tools. `npm run dev` is also available for NitroStack's development workflow. To customize runtime settings, copy [`.env.example`](.env.example) to `.env` and set only the capabilities you intend to use. Keep `data/` alongside the application when deploying; the reference and fixture loaders read from the repository root.
 
-Copy `.env.example` to `.env` for local development. NitroStack Cloud values should be configured in the cloud environment.
+**Connecting an MCP host:** launch the built `dist/index.js` with the repository root as its working directory and choose a transport supported by your NitroStack/host setup. `.env.example` documents the transport settings. This repository does not ship a host-specific client configuration.
 
-### Core Runtime
+## MCP usage
 
-| Variable | Default | Purpose |
+Tools are independently callable. For example, an MCP client can call `validate_sequence` with:
+
+```json
+{
+  "fasta": ">protein\nACDEFGHIK",
+  "profileVersion": "mvp-v1.0"
+}
+```
+
+The response contains a normalized sequence, its length and SHA-256 hash, or a structured validation error. `generate_candidate_peptides` can then create peptide windows. A research client must explicitly call the prediction, evidence, ranking, and export tools it needs and pass the resulting evidence between them.
+
+For a standalone offline demonstration, the repository includes exact-match fixtures in `data/fixtures/` and a separate `predict_synthetic_binding` tool. Fixture-backed prediction only succeeds when the protein reference **and** method, allele, peptide-length, and parameter selectors match an approved fixture. An arbitrary new sequence is not automatically given a fixture prediction.
+
+## Execution modes and provenance
+
+Most live connectors are **disabled by default**. These switches are defined in [`src/modules/config/environment.ts`](src/modules/config/environment.ts):
+
+| Capability | Enablement | Additional dependency |
 | --- | --- | --- |
-| `NODE_ENV` | `development` | Runtime mode. Use `production` in NitroStack Cloud. |
-| `HOST` | `127.0.0.1` locally, `0.0.0.0` in production | HTTP bind host. |
-| `PORT` / `MCP_PORT` | `3001` | MCP HTTP port. NitroStack Cloud may supply `PORT`. |
-| `MCP_TRANSPORT_TYPE` | `http` | MCP transport. Use `http` for NitroStack Cloud. |
-| `LOG_LEVEL` | `info` | Structured logging level. |
-| `EXECUTION_MODE` | `HYBRID` | Requested workflow policy. |
-| `DEMO_MODE` | `true` for demo-friendly operation | Allows deterministic demo-safe fallback when configured. |
-| `LLM_ENABLED` | `false` | Enables optional LLM-backed routing when credentials are present. |
+| IEDB MHC binding | `IEDB_LIVE_ENABLED=true` | Network access to a compatible IEDB endpoint |
+| IEDB population coverage | `IEDB_POPULATION_COVERAGE_ENABLED=true` | Configured endpoint or standalone script |
+| MHCflurry | `MHCFLURRY_ENABLED=true` | Installed CLI and downloaded models |
+| RCSB PDB / AlphaFold DB | `RCSB_PDB_ENABLED=true` / `ALPHAFOLD_DB_ENABLED=true` | Network access |
+| PubChem | `PUBCHEM_ENABLED=true` | Network access |
+| AutoDock Vina and other local tools | Individual flags such as `VINA_ENABLED=true` | Installed binaries and valid inputs |
+| Optional LLM text | `LLM_ENABLED=true` | `OPENAI_API_KEY` and configured model |
 
-### Scientific Connectors
+Results carry provenance labels. `LIVE` means a configured connector ran during the request; `FIXTURE` means approved data was replayed; `SYNTHETIC` means demonstration-only values were computed. Failures are returned as structured tool errors. Some contracts also represent `CACHED` values, but this standalone branch does not include the SQLite persistence layer described in the archived README. Do not interpret synthetic or fixture results as live scientific measurements.
 
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `IEDB_LIVE_ENABLED` | `false` | Enables IEDB live MHC binding calls. |
-| `IEDB_TIMEOUT_MS` | `120000` | IEDB request timeout. |
-| `IEDB_POPULATION_COVERAGE_ENABLED` | `false` | Enables configured population coverage connector. |
-| `IEDB_POPULATION_COVERAGE_URL` | unset | Optional compatible HTTP endpoint. |
-| `IEDB_POPULATION_COVERAGE_SCRIPT_PATH` | unset | Local standalone IEDB population coverage script. |
-| `MHCFLURRY_ENABLED` | `false` | Enables local MHCflurry when installed. |
-| `MHCFLURRY_COMMAND` | `mhcflurry` | Command or path for the MHCflurry CLI. |
-| `GRAPHBEPI_MODE` | `fixture` | GraphBepi is fixture-only for MVP reliability. |
+## Agent workflow
 
-Install/check optional runtimes:
+`describe_agentic_workflow` returns a manifest of named roles, permitted tool groups, and proposed approval gates. `run_agentic_workflow` runs a **fixed sequence** of LangGraph nodes and records selected tool names and trace steps. Its nodes do not currently call the prediction, structure, docking, or export tools themselves. When enabled, the LLM can produce bounded planning text; it does not dynamically rewire or execute the graph. Without LLM configuration, the mode is deterministic.
 
-```powershell
-npm run connectors:check:iedb
-npm run connectors:install:iedb-population
-npm run connectors:check:iedb-population
-npm run connectors:install:mhcflurry
-npm run connectors:check:mhcflurry
-npm run science:check
+This distinction matters for integration: use the individual MCP tools to perform scientific operations, and treat the agent workflow output as planning/trace metadata. The workflow trace alone is not evidence that its listed scientific operations ran.
+
+## Current limits
+
+- This public branch contains the MCP application and data assets, but not the web UI, REST API, or SQLite-backed project lifecycle described in the archived README.
+- Most scientific connectors need external services, downloaded models, or local binaries. Their presence in code does not verify a live deployment.
+- GraphBepi is fixture-only. Synthetic and fixture outputs are demonstration data with restricted scientific use.
+- The Vina adapter and docking fixtures are implementation paths, not validation of a docking protocol or biological conclusion.
+- `package.json` has a build script but no automated test script. A successful build and tool registration do not establish scientific accuracy or end-to-end reproducibility.
+
+## Repository map
+
+```text
+src/app.module.ts          NitroStack MCP application and module registration
+src/modules/               Tool controllers, connector adapters, orchestration
+src/lib/algorithms/         Local deterministic algorithms
+src/lib/database/           Data/fixture/profile loaders and validation
+src/widgets/                Widget scaffold (no bundled widgets currently)
+data/reference/             Reference manifests and versioned records
+data/profiles/              Ranking and biological-constraint profiles
+data/fixtures/              Exact-match offline demonstration cases
+oldreadme.md                Archived previous README
 ```
-
-## NitroStack Cloud Deployment
-
-NitroStack Cloud deploys the MCP app, not the full React/API product.
-
-| Setting | Value |
-| --- | --- |
-| Branch | `main` |
-| Root / artifact | repository root |
-| Runtime | Node.js 20 |
-| Build command | `npm run build` |
-| Start command | `npm start` or `npm run start:prod` |
-| Health endpoint | `/health` |
-| MCP endpoint | `/mcp` |
-
-Recommended non-secret cloud environment:
-
-```env
-NODE_ENV=production
-LOG_LEVEL=info
-HOST=0.0.0.0
-MCP_TRANSPORT_TYPE=http
-EXECUTION_MODE=HYBRID
-DEMO_MODE=true
-LLM_ENABLED=false
-IEDB_LIVE_ENABLED=true
-GRAPHBEPI_MODE=fixture
-MHCFLURRY_ENABLED=false
-```
-
-Do not hard-code `PORT` when NitroStack Cloud supplies one automatically.
-
-The MCP app imports private workspace packages from `packages/*`, so deploying only `apps/mcp` is not supported. Deploy from the repository root.
-
-## Docker
-
-Build and run the MCP artifact:
-
-```powershell
-docker build -f Dockerfile.mcp -t immunograph-mcp .
-docker run --rm -p 3000:3000 --env-file .env.production.example immunograph-mcp
-```
-
-Run the full local stack:
-
-```powershell
-docker compose up --build -d
-```
-
-Open `http://localhost:8080`.
-
-
-## Security And Scientific Boundaries
-
-- No authentication is required for the single-researcher MVP workspace.
-- LLMs may route, summarize, and verify; they must not invent biological measurements.
-- Synthetic predictor outputs are always labeled `scientificUse=false`.
-- Fixture outputs are deterministic replay assets, not live scientific predictions.
-- GraphBepi is fixture-only in the MVP.
-- Optional local scientific binaries must be installed and licensed by the deployment environment before being presented as live.
-- Reports must include limitations and provenance when any non-live source contributes to a result.
 
 ## Verification
 
-Use the standard quality gates before deployment:
+For the MCP-only branch reviewed on 6 October 2026: `npm ci` and `npm run build` completed, and `npm start` initialized the server with **46 tools and 0 widgets** after the full `data/` directory was present. Live connectors, full research workflows, and scientific results were **not** verified by that check.
 
-```powershell
-npm run typecheck
-npm run lint
-npm test
-npm run build
-npm run nitro:verify
-```
+---
 
-The test suite covers deterministic algorithms, schema validation, repository behavior, API contracts, MCP tool discovery, tool schemas, provenance behavior, and workflow/export paths.
-
-
-
-## References
-
-- [NitroStack documentation](https://docs.nitrostack.ai/)
-- [IEDB Tools API](https://tools.iedb.org/main/tools-api/)
-- [IEDB population coverage package](https://tools.iedb.org/population/download/)
-- [MHCflurry documentation](https://openvax.github.io/mhcflurry/)
-- [GraphBepi publication](https://pubmed.ncbi.nlm.nih.gov/37039829/)
-
-## 📄 License
-
-This project is licensed under the **MIT License**.
-
-You are free to use, modify, distribute, and build upon this work, provided that the original copyright notice and license are included.
-
-See the [LICENSE](LICENSE) file for the full license text.
+**Research carefully.** Keep inputs, configuration, provenance, and reviewer decisions with every exported result.
