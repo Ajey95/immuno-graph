@@ -17,11 +17,29 @@ ImmunoGraph exposes sequence validation, prediction adapters, evidence processin
 > [!IMPORTANT]
 > ImmunoGraph is computational research support. Its synthetic and fixture outputs are demonstrations, not experimental evidence. A candidate shortlist, docking pose, or generated report does not establish vaccine efficacy, safety, or clinical utility. Independent scientific review and experimental validation are required.
 
-**Jump to:** [MCP interface](#mcp-interface) · [Tool catalog](#tool-catalog) · [Architecture](#architecture) · [Quick start](#quick-start) · [Provenance](#provenance-and-scientific-use)
+**Jump to:** [The problem](#the-research-problem) · [Our solution](#the-mcp-solution) · [End-to-end flow](#end-to-end-flow) · [All 46 tools](#tool-catalog) · [Quick start](#quick-start) · [Provenance](#provenance-and-scientific-use)
+
+## The research problem
+
+A protein sequence is only the starting point for an epitope study. Researchers often have to move between sequence validators, binding predictors, HLA coverage calculations, structure databases, chemistry tools, docking programs, and spreadsheets. These systems use different inputs, score scales, identifiers, and output formats. When results are copied between them, the source, configuration, and difference between a live calculation and an offline demonstration can become hard to audit.
+
+That fragmentation makes a candidate shortlist difficult to reproduce and review. **ImmunoGraph addresses the integration and evidence-handling problem**; it does not determine whether a candidate is safe or effective in people.
+
+## The MCP solution
+
+ImmunoGraph packages the computational steps as typed tools behind one Model Context Protocol (MCP) server. A research client can discover the tools, call the ones needed for a study, pass structured evidence between them, and export a reviewable package.
+
+| Research friction | What this MCP server provides |
+| --- | --- |
+| Disconnected programs and formats | One discoverable tool surface with validated inputs and structured responses |
+| Incomparable or opaque outputs | Versioned score transformations, deterministic constraints/ranking, and explicit source labels |
+| Hard-to-review handoffs | Run metadata, hashes, explanations, CSV/report tools, and a research ZIP assembled from supplied evidence |
+
+Live scientific connectors are optional. The bundled synthetic data and exact-match fixtures make offline demonstrations repeatable, while retaining their demonstration provenance.
 
 ## MCP interface
 
-`immunograph-mcp` is the deployable unit. An MCP host discovers its tools, validates requests against their input schemas, and receives structured results with provenance and execution metadata. The seven scientific modules are organized inside this **single server**.
+`immunograph-mcp` is the deployable unit. An MCP host discovers and calls its tools; the server validates requests against their input schemas and returns structured results with execution metadata. Scientific results include source provenance where applicable. The seven tool modules are organized inside this **single server**.
 
 | MCP surface | What it provides |
 | --- | --- |
@@ -32,19 +50,121 @@ ImmunoGraph exposes sequence validation, prediction adapters, evidence processin
 
 Clients can combine these tools in their own research workflow. Each operation remains callable on its own; the MCP server does not require five separate MCP installations.
 
+## End-to-end flow
+
+```mermaid
+flowchart TD
+    A["Researcher supplies protein FASTA"] --> B["MCP client calls validate_sequence"]
+    B --> C["Generate peptide windows"]
+    C --> D["Collect MHC / B-cell evidence"]
+    D --> E["Normalize scores and assess consensus / coverage"]
+    E --> F["Apply constraints and rank candidates"]
+    F --> G["Generate explanations, exports and research ZIP"]
+    F -. "optional supporting review" .-> H["Structure tools"]
+    H -.-> I["Chemistry and docking tools"]
+    I -. "supplied artifacts" .-> G
+```
+
+The arrows show a **recommended sequence of separate MCP tool calls by a client**. The server does not automatically execute the full chain. The client supplies the outputs and provenance needed by each later tool.
+
+| Step | MCP calls | Result and decision point |
+| --- | --- | --- |
+| 1. Validate input | `validate_sequence` | Normalized protein sequence and SHA-256 identity, or an input error |
+| 2. Create candidates | `generate_candidate_peptides` | One-based peptide windows; these are candidates, not predictions |
+| 3. Gather evidence | `predict_mhci`, `predict_mhcii`, `predict_bcell` | MHC observations from enabled live connectors or matching fixtures; B-cell evidence is fixture-only, and synthetic binding is a separate demo tool |
+| 4. Compare evidence | `normalize_scores`, consensus and population tools | Comparable derived values with method and population provenance |
+| 5. Shortlist | Constraint tools, `rank_candidates`, optional shortlist/construct tools | Rule outcomes and deterministic preliminary or final ranks; final ranking requires completed constraints |
+| 6. Review supporting structures | Structure, chemistry, and docking tools when configured | Supporting records and artifacts; these calls do not automatically alter the ranking score |
+| 7. Export | Report, candidate, trace, and package tools | Caller-supplied evidence assembled into reports, CSV, and a checksummed ZIP |
+
+**First practical boundary:** with live prediction disabled, an arbitrary new protein has no automatic scientific binding result. Exact fixtures only match their recorded inputs; the synthetic predictor is explicitly demonstration-only.
+
 ## Tool catalog
 
-| Module | Tools | Examples | Current execution boundary |
-| --- | ---: | --- | --- |
-| Prediction | 6 | `validate_sequence`, `generate_candidate_peptides`, `predict_mhci`, `predict_mhcii`, `predict_bcell` | IEDB and MHCflurry are optional; GraphBepi is fixture-only. A separate synthetic predictor is available for demonstrations. |
-| Evidence | 9 | `normalize_scores`, `compute_consensus`, `rank_candidates`, `calculate_population_coverage` | Deterministic calculations use supplied evidence; live population coverage requires explicit configuration. |
-| Constraints | 5 | `validate_thresholds`, `detect_overlapping_epitopes`, `apply_constraint_rules` | Local rule and overlap calculations. |
-| Structure | 7 | `fetch_structure`, `map_epitopes_to_structure`, `detect_binding_pockets` | RCSB/AlphaFold lookups and FreeSASA/fpocket paths require enabled connectors or local binaries; fixture paths exist. |
-| Chemistry | 5 | `fetch_compound`, `calculate_molecular_descriptors`, `prepare_ligand` | PubChem, RDKit, and Open Babel paths require explicit setup; fixture paths exist. |
-| Docking | 5 | `prepare_receptor`, `run_docking`, `extract_interactions` | AutoDock Vina and PLIP paths require local binaries; the offline path returns labelled fixture results. |
-| Reports & utilities | 9 | `generate_report`, `export_candidates`, `export_research_package` | Reports, CSV exports, and research ZIPs are assembled from supplied data. |
+The server registers **46 tools in seven modules**. The descriptions below refer to the current handlers; “live” paths require explicit configuration, and demonstration paths retain their source labels. Complete input/output schemas are in [`src/modules/tool-contracts.ts`](src/modules/tool-contracts.ts) and the [`src/modules/`](src/modules/) controllers.
 
-Tool inputs are validated with Zod. Tool responses include structured success or failure data and metadata such as the tool name, run ID, timestamps, and input/output hashes. The complete schemas live in [`src/modules/tool-contracts.ts`](src/modules/tool-contracts.ts) and the individual controllers in [`src/modules/`](src/modules/).
+### Prediction · 6 tools
+
+| Tool | What it does |
+| --- | --- |
+| `validate_sequence` | Validates one protein FASTA record and returns the normalized sequence, length, and SHA-256 hash. |
+| `generate_candidate_peptides` | Creates stable, one-based MHC-I or MHC-II peptide windows for requested lengths. |
+| `predict_mhci` | Resolves MHC-I binding observations through configured IEDB/MHCflurry paths or an exact fixture. |
+| `predict_mhcii` | Resolves MHC-II binding observations through configured IEDB or an exact fixture. |
+| `predict_bcell` | Replays B-cell residue/region evidence from an exact GraphBepi fixture; no live B-cell connector is implemented here. |
+| `predict_synthetic_binding` | Computes deterministic offline demonstration binding values, labelled `SYNTHETIC` and unsuitable as scientific predictions. |
+
+### Evidence and prioritization · 9 tools
+
+| Tool | What it does |
+| --- | --- |
+| `normalize_scores` | Applies versioned transformations to raw predictor scores so later comparisons use a defined scale. |
+| `compute_consensus` | Combines method observations into weighted consensus, agreement, and completeness for one candidate group. |
+| `compute_consensus_batch` | Performs the same deterministic consensus calculation across multiple independent groups. |
+| `calculate_population_coverage` | Calculates coverage through a configured service/script or an exact-match fixture. |
+| `calculate_synthetic_population_coverage` | Calculates demonstration coverage from explicitly synthetic HLA frequencies. |
+| `rank_candidates` | Computes profile-based preliminary scores or stable final ranks; final mode requires completed constraint results. |
+| `optimize_shortlist_coverage` | Selects a T-cell shortlist using supplied candidates and coverage targets; local optimization output is marked demonstration-only. |
+| `optimize_construct_genetic` | Runs seeded, deterministic construct optimization with coverage and redundancy constraints; output is demonstration-only. |
+| `calibrate_confidence` | Derives a confidence value from scores, agreement, completeness, and evidence count without experimental calibration. |
+
+### Constraints · 5 tools
+
+| Tool | What it does |
+| --- | --- |
+| `detect_overlapping_epitopes` | Finds positional overlaps and connected components without deciding which candidate wins. |
+| `remove_duplicate_candidates` | Collapses exact positional duplicates while preserving matching peptides at different coordinates. |
+| `validate_thresholds` | Evaluates configured hard biological thresholds and returns rule outcomes. |
+| `categorize_candidates` | Assigns deterministic candidate categories and blocking conditions from completed scores and rules. |
+| `apply_constraint_rules` | Applies base, duplicate, and overlap rules to an immutable candidate snapshot. |
+
+### Structure · 7 tools
+
+| Tool | What it does |
+| --- | --- |
+| `fetch_structure` | Retrieves RCSB PDB/AlphaFold data when enabled, or returns a labelled fixture record. |
+| `validate_structure` | Checks structure metadata before coordinate mapping or docking preparation. |
+| `map_epitopes_to_structure` | Maps candidate sequence coordinates to a supplied structure reference. |
+| `calculate_surface_accessibility` | Uses configured FreeSASA or returns fixture-safe accessibility summaries. |
+| `calculate_structure_confidence` | Summarizes supplied structure metrics or labelled fixture defaults. |
+| `detect_binding_pockets` | Uses configured fpocket, or returns a fixture result/failure according to the request. |
+| `create_molstar_view` | Produces a Mol* view-state reference for a client visualization; it is not a built-in viewer. |
+
+### Chemistry · 5 tools
+
+| Tool | What it does |
+| --- | --- |
+| `fetch_compound` | Retrieves PubChem metadata when enabled or replays a labelled compound fixture. |
+| `validate_compound` | Checks compound identity and basic molecular-string shape before downstream use. |
+| `deduplicate_compounds` | Groups compounds by normalized SMILES-like identity. |
+| `calculate_molecular_descriptors` | Uses RDKit when configured and requested; otherwise returns lightweight labelled estimates. |
+| `prepare_ligand` | Invokes configured Open Babel or returns a fixture-labelled ligand artifact reference. |
+
+### Docking · 5 tools
+
+| Tool | What it does |
+| --- | --- |
+| `prepare_receptor` | Invokes configured receptor preparation tooling or returns a fixture-labelled reference. |
+| `validate_docking_box` | Checks docking-box dimensions before an attempted docking run. |
+| `run_docking` | Invokes configured AutoDock Vina or returns deterministic fixture-labelled poses. |
+| `cluster_docking_poses` | Groups supplied pose data into representative pose clusters. |
+| `extract_interactions` | Invokes configured PLIP or returns fixture-labelled interaction summaries. |
+
+### Reports and utilities · 9 tools
+
+| Tool | What it does |
+| --- | --- |
+| `generate_report` | Creates report data from the supplied run and evidence snapshot. |
+| `export_candidates` | Exports candidate records with raw and normalized score fields kept distinct. |
+| `visualize_results` | Builds a validated visualization **view model** for a client to render. |
+| `explain_candidate` | Explains a fixed candidate decision without changing its underlying scientific values. |
+| `export_workflow_trace` | Exports an ordered, redacted trace of supplied events. |
+| `describe_agentic_workflow` | Returns metadata about available stages, tool permissions, and approval gates. |
+| `run_agentic_workflow` | Returns a stage trace from approved tool names; it does **not** execute those scientific tools. |
+| `chat_with_research_agent` | Responds from a caller-supplied evidence summary and abstains when evidence is absent. |
+| `export_research_package` | Returns a checksummed research ZIP as base64 content with artifact metadata, assembled from the supplied snapshot. |
+
+The workflow/chat utility names are part of the MCP API. The client still makes each scientific tool call explicitly.
 
 ## Architecture
 
@@ -102,7 +222,9 @@ Most live connectors are **disabled by default**. These switches are defined in 
 | MHCflurry | `MHCFLURRY_ENABLED=true` | Installed CLI and downloaded models |
 | RCSB PDB / AlphaFold DB | `RCSB_PDB_ENABLED=true` / `ALPHAFOLD_DB_ENABLED=true` | Network access |
 | PubChem | `PUBCHEM_ENABLED=true` | Network access |
-| AutoDock Vina and other local tools | Individual flags such as `VINA_ENABLED=true` | Installed binaries and valid inputs |
+| RDKit / Open Babel | `RDKIT_ENABLED=true` / `OPENBABEL_ENABLED=true` | Installed Python package or binary and valid chemistry inputs |
+| FreeSASA / fpocket | `FREESASA_ENABLED=true` / `FPOCKET_ENABLED=true` | Installed binaries and valid structure inputs |
+| AutoDock Vina / PLIP | `VINA_ENABLED=true` / `PLIP_ENABLED=true` | Installed binaries and valid docking inputs |
 
 ## Provenance and scientific use
 
