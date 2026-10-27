@@ -291,11 +291,12 @@ export const predictMhciiContract = defineContract({
 });
 export const predictBcellContract = defineContract({
   name: 'predict_bcell',
-  description: 'Resolve B-cell evidence; GraphBepi is fixture-only in MVP v1.',
+  description: 'Compute Parker hydrophilicity evidence from an actual sequence, or resolve explicit GraphBepi fixtures.',
   inputSchema: z
     .object({
       runId: identifierSchema,
       proteinRef: identifierSchema,
+      sequence: z.string().regex(/^[ACDEFGHIKLMNPQRSTVWY]+$/u).min(7).optional(),
       methods: nonemptyStrings,
       parameters: jsonRecord,
       fallbackPolicy: fallbackPolicySchema,
@@ -1419,7 +1420,7 @@ const agentStepSchema = z
 export const runAgenticWorkflowContract = defineContract({
   name: 'run_agentic_workflow',
   description:
-    'Run the strict PRD v1.1 LangGraph bounded-agent workflow inside the single standard MCP server.',
+    'Generate the bounded LangGraph workflow trace inside the MCP server; scientific tools are not executed by this operation.',
   inputSchema: z
     .object({
       runId: identifierSchema,

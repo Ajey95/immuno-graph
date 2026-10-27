@@ -10,6 +10,7 @@ const receptorPath = required('IMMUNOGRAPH_LIVE_RECEPTOR_PDBQT');
 const ligandPath = required('IMMUNOGRAPH_LIVE_LIGAND_PDBQT');
 const outputDirectory = resolve(required('IMMUNOGRAPH_LIVE_OUTPUT_DIR'));
 const vinaCommand = required('VINA_COMMAND');
+const python = required('SCIENTIFIC_PYTHON_COMMAND');
 const receptor = await readFile(receptorPath);
 const ligand = await readFile(ligandPath);
 
@@ -22,6 +23,9 @@ const transport = new StdioClientTransport({
     ...Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined)),
     VINA_ENABLED: 'true',
     VINA_COMMAND: vinaCommand,
+    VINA_WSL_DISTRO: process.env.VINA_WSL_DISTRO ?? '',
+    PLIP_ENABLED: 'true',
+    SCIENTIFIC_PYTHON_COMMAND: python,
     DOCKING_COMMAND_TIMEOUT_MS: '600000',
   },
 });
@@ -64,10 +68,32 @@ try {
     assert.equal(createHash('sha256').update(bytes).digest('hex'), artifact.sha256);
     await writeFile(join(outputDirectory, artifact.fileName), bytes);
   }
+  const complexArtifact = result.data?.artifacts.find((artifact) => artifact.fileName === 'complex.pdb');
+  assert.ok(complexArtifact, 'run_docking did not export complex.pdb');
+  const interactionResponse = await client.callTool({
+    name: 'extract_interactions',
+    arguments: {
+      runId: 'real-1iep-verification', dockingRunId: '1iep-receptor-1iep-ligand-1iep-documented-box',
+      representativePoseIds: ['1iep-receptor-1iep-ligand-1iep-documented-box-pose-1'],
+      method: 'plip', complexPdbBase64: complexArtifact.contentBase64,
+    },
+  }, { timeout: 180000 });
+  const interactionResult = interactionResponse.structuredContent as {
+    ok: boolean; error?: { code: string; message: string };
+    data?: { interactions: Array<{ interactionType: string }>; artifacts: Array<{ fileName: string; contentBase64: string; sha256: string; byteLength: number }> };
+  };
+  assert.equal(interactionResult.ok, true, `${interactionResult.error?.code}: ${interactionResult.error?.message}`);
+  assert.ok((interactionResult.data?.interactions.length ?? 0) > 0);
+  for (const artifact of interactionResult.data?.artifacts ?? []) {
+    const bytes = Buffer.from(artifact.contentBase64, 'base64');
+    assert.equal(createHash('sha256').update(bytes).digest('hex'), artifact.sha256);
+    await writeFile(join(outputDirectory, artifact.fileName), bytes);
+  }
   console.log(JSON.stringify({
     status: 'LIVE',
     poses: result.data?.poses,
     artifacts: result.data?.artifacts.map(({ fileName, sha256, byteLength }) => ({ fileName, sha256, byteLength })),
+    plipContactCount: interactionResult.data?.interactions.length,
     outputDirectory,
   }, null, 2));
 } finally {

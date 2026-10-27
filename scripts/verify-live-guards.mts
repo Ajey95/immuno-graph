@@ -15,11 +15,14 @@ const transport = new StdioClientTransport({
 });
 await client.connect(transport);
 const cases = [
-  ['extract_interactions', { runId: 'guard', dockingRunId: 'run-1', representativePoseIds: ['pose-1'], method: 'plip' }, 'PLIP_INPUT_AND_PARSER_REQUIRED'],
+  ['extract_interactions', { runId: 'guard', dockingRunId: 'run-1', representativePoseIds: ['pose-1'], method: 'plip' }, 'PLIP_COMPLEX_REQUIRED'],
   ['calculate_surface_accessibility', { runId: 'guard', method: 'freesasa', mappings: [{ candidateId: 'c1', structureId: 's1', chainId: 'A', start: 1, end: 9 }] }, 'FREESASA_STRUCTURE_REQUIRED'],
-  ['detect_binding_pockets', { runId: 'guard', structureId: 's1', structureArtifactRef: 's1.pdb', method: 'fpocket' }, 'FPOCKET_FILE_AND_PARSER_REQUIRED'],
-  ['create_molstar_view', { runId: 'guard', viewId: 'view-1', structureArtifactRef: 's1.pdb', mode: 'STRUCTURE' }, 'MOLSTAR_EXPORT_REQUIRED'],
+  ['detect_binding_pockets', { runId: 'guard', structureId: 's1', structureArtifactRef: 's1.pdb', method: 'fpocket' }, 'FPOCKET_STRUCTURE_REQUIRED'],
+  ['create_molstar_view', { runId: 'guard', viewId: 'view-1', structureArtifactRef: 's1.pdb', mode: 'STRUCTURE' }, 'MOLSTAR_STRUCTURE_REQUIRED'],
   ['map_epitopes_to_structure', { runId: 'guard', structureId: 's1', candidates: [{ candidateId: 'c1', start: 1, end: 9 }], mappingMode: 'DIRECT_COORDINATE' }, 'STRUCTURE_MAPPING_INPUT_REQUIRED'],
+  ['validate_structure', { runId: 'guard', structureId: 's1', format: 'PDB', chainIds: ['A'], residueCount: 9, sourceStatus: 'LIVE' }, 'STRUCTURE_PDB_REQUIRED'],
+  ['cluster_docking_poses', { runId: 'guard', dockingRunId: 'run-1', method: 'DBSCAN', poses: [{ poseId: 'p1', rank: 1, affinityKcalMol: -5, rmsdLowerBound: 0, rmsdUpperBound: 0 }] }, 'CLUSTER_COORDINATES_REQUIRED'],
+  ['predict_bcell', { runId: 'guard', proteinRef: 's1', methods: ['parker'], parameters: {}, fallbackPolicy: 'LIVE_ONLY' }, 'PARKER_SEQUENCE_REQUIRED'],
 ] as const;
 try {
   for (const [name, args, code] of cases) {

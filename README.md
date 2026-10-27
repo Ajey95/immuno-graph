@@ -78,7 +78,7 @@ The arrows show a **recommended sequence of separate MCP tool calls by a client*
 | --- | --- | --- |
 | 1. Validate input | `validate_sequence` | Normalized protein sequence and SHA-256 identity, or an input error |
 | 2. Create candidates | `generate_candidate_peptides` | One-based peptide windows; these are candidates, not predictions |
-| 3. Gather evidence | `predict_mhci`, `predict_mhcii`, `predict_bcell` | MHC observations from enabled live connectors or matching fixtures; B-cell evidence is fixture-only, and synthetic binding is a separate demo tool |
+| 3. Gather evidence | `predict_mhci`, `predict_mhcii`, `predict_bcell` | MHC observations from enabled live connectors or matching fixtures; Parker B-cell hydrophilicity is computed from supplied sequence, GraphBepi remains a fixture, and synthetic binding is a separate demo tool |
 | 4. Compare evidence | `normalize_scores`, consensus and population tools | Comparable derived values with method and population provenance |
 | 5. Shortlist | Constraint tools, `rank_candidates`, optional shortlist/construct tools | Rule outcomes and deterministic preliminary or final ranks; final ranking requires completed constraints |
 | 6. Review supporting structures | Structure, chemistry, and docking tools when configured | Supporting records and artifacts; these calls do not automatically alter the ranking score |
@@ -98,7 +98,7 @@ The server registers **46 tools in seven modules**. The descriptions below refer
 | `generate_candidate_peptides` | Creates stable, one-based MHC-I or MHC-II peptide windows for requested lengths. |
 | `predict_mhci` | Resolves MHC-I binding observations through configured IEDB/MHCflurry paths or an exact fixture. |
 | `predict_mhcii` | Resolves MHC-II binding observations through configured IEDB or an exact fixture. |
-| `predict_bcell` | Replays B-cell residue/region evidence from an exact GraphBepi fixture; no live B-cell connector is implemented here. |
+| `predict_bcell` | Computes the Parker hydrophilicity scale from a supplied sequence as a physicochemical proxy, or replays an exact GraphBepi fixture. |
 | `predict_synthetic_binding` | Computes deterministic offline demonstration binding values, labelled `SYNTHETIC` and unsuitable as scientific predictions. |
 
 ### Evidence and prioritization · 9 tools
@@ -130,12 +130,12 @@ The server registers **46 tools in seven modules**. The descriptions below refer
 | Tool | What it does |
 | --- | --- |
 | `fetch_structure` | Retrieves RCSB PDB/AlphaFold coordinates when enabled and returns the actual PDB bytes as an inline artifact, or a labelled fixture record. |
-| `validate_structure` | Checks structure metadata before coordinate mapping or docking preparation. |
-| `map_epitopes_to_structure` | Replays fixture mappings. Direct coordinate mapping currently fails until residue-level structure input and alignment are supplied. |
-| `calculate_surface_accessibility` | Returns fixture accessibility summaries. A requested live FreeSASA calculation fails until PDB coordinates and residue mappings are supported. |
+| `validate_structure` | Checks actual PDB chain and residue records for live input, or checks labelled fixture metadata. |
+| `map_epitopes_to_structure` | Aligns a reference sequence to actual PDB protein chains with BioPython and maps candidate positions. |
+| `calculate_surface_accessibility` | Runs FreeSASA on supplied PDB coordinates and mapped residues, exporting per-residue areas. |
 | `calculate_structure_confidence` | Summarizes supplied structure metrics or labelled fixture defaults. |
-| `detect_binding_pockets` | Returns a fixture pocket; the fpocket live mode currently fails because parsed pocket coordinates are not implemented. |
-| `create_molstar_view` | Returns a fixture view-state reference. Live Mol* export currently fails; `run_docking` supplies a separate real 3Dmol viewer HTML. |
+| `detect_binding_pockets` | Runs fpocket on supplied PDB coordinates and returns scored pockets with measured alpha sphere centers. |
+| `create_molstar_view` | Exports a Mol* HTML viewer embedding supplied protein and optional ligand PDB coordinates. |
 
 ### Chemistry · 5 tools
 
@@ -153,9 +153,9 @@ The server registers **46 tools in seven modules**. The descriptions below refer
 | --- | --- |
 | `prepare_receptor` | Uses configured Meeko with supplied PDB bytes and chain selection to export real PDBQT bytes, or returns a fixture-labelled reference. |
 | `validate_docking_box` | Checks docking-box dimensions before an attempted docking run. |
-| `run_docking` | Runs AutoDock Vina on supplied receptor and ligand PDBQT bytes plus a real box. Exports pose PDBQT, an interactive 3D viewer HTML, and a ZIP of coordinates, log, and settings. |
-| `cluster_docking_poses` | Groups supplied pose data into representative pose clusters. |
-| `extract_interactions` | Returns fixture interaction summaries. Live PLIP extraction currently fails until complex input and output parsing are implemented. |
+| `run_docking` | Runs AutoDock Vina on supplied receptor and ligand PDBQT bytes plus a real box. Exports pose PDBQT, a protein-ligand complex PDB, 3D viewer HTML, and a ZIP. |
+| `cluster_docking_poses` | Clusters actual Vina ligand coordinates by RMSD with hierarchical or DBSCAN-style grouping. |
+| `extract_interactions` | Runs PLIP on a supplied complex PDB and exports parsed contacts and the original XML report. |
 
 #### Molecular docking result
 
@@ -266,8 +266,8 @@ Most live connectors are **disabled by default**. These switches are defined in 
 | RCSB PDB / AlphaFold DB | `RCSB_PDB_ENABLED=true` / `ALPHAFOLD_DB_ENABLED=true` | Network access |
 | PubChem | `PUBCHEM_ENABLED=true` | Network access |
 | RDKit / Open Babel | `RDKIT_ENABLED=true` / `OPENBABEL_ENABLED=true` | Installed Python package or binary and valid chemistry inputs |
-| FreeSASA / fpocket | `FREESASA_ENABLED=true` / `FPOCKET_ENABLED=true` | Installed binaries and valid structure inputs |
-| AutoDock Vina / PLIP | `VINA_ENABLED=true` / `PLIP_ENABLED=true` | Installed binaries and valid docking inputs |
+| FreeSASA / fpocket | `FREESASA_ENABLED=true` / `FPOCKET_ENABLED=true` | Python FreeSASA, native fpocket, and actual PDB coordinates |
+| AutoDock Vina / PLIP | `VINA_ENABLED=true` / `PLIP_ENABLED=true` | Vina executable, Python PLIP, and actual docking inputs |
 
 ## Provenance and scientific use
 

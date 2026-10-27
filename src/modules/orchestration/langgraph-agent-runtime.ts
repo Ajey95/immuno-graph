@@ -205,9 +205,10 @@ export async function runLangGraphAgentWorkflow(
       input.agentMode === 'LLM' && !llmPlan.used
         ? [
             llmPlan.warning ?? 'llm-provider-unavailable-deterministic-agent-routing-used',
+            'workflow-plan-only-no-scientific-tool-calls',
             ...state.warnings,
           ]
-        : state.warnings,
+        : ['workflow-plan-only-no-scientific-tool-calls', ...state.warnings],
   };
 }
 
@@ -237,7 +238,7 @@ function buildStep(input: {
     observation:
       input.toolNames.length === 0
         ? 'No approved typed tools were available for this agent.'
-        : 'Agent selected typed MCP tools and preserved provenance.',
+        : 'Plan selected typed tool names; this workflow did not execute scientific tools.',
     verification: input.verification,
     decision: input.decision,
     inputHash: canonicalJsonSha256(base),

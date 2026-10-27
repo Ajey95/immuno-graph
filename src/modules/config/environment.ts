@@ -118,16 +118,19 @@ const rawMcpEnvironmentSchema = z.object({
     .transform((v) => v === 'true')
     .default(false),
   VINA_COMMAND: z.string().min(1).default('vina'),
+  VINA_WSL_DISTRO: z.string().default(''),
   PLIP_ENABLED: z
     .enum(['true', 'false'])
     .transform((v) => v === 'true')
     .default(false),
   PLIP_COMMAND: z.string().min(1).default('plip'),
+  SCIENTIFIC_PYTHON_COMMAND: z.string().min(1).default('python'),
   FPOCKET_ENABLED: z
     .enum(['true', 'false'])
     .transform((v) => v === 'true')
     .default(false),
   FPOCKET_COMMAND: z.string().min(1).default('fpocket'),
+  FPOCKET_WSL_DISTRO: z.string().default(''),
   FREESASA_ENABLED: z
     .enum(['true', 'false'])
     .transform((v) => v === 'true')

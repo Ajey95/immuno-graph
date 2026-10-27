@@ -125,6 +125,8 @@ const clusterInput = z
     dockingRunId: identifierSchema,
     method: z.enum(['DBSCAN', 'HIERARCHICAL', 'FIXTURE']),
     poses: z.array(dockingPose).min(1),
+    posesPdbqtBase64: z.string().min(1).max(8_000_000).optional(),
+    rmsdThresholdAngstrom: z.number().positive().max(20).default(2),
   })
   .strict();
 const clusterData = z
@@ -151,6 +153,7 @@ const interactionsInput = z
     dockingRunId: identifierSchema,
     representativePoseIds: z.array(identifierSchema).min(1),
     method: identifierSchema,
+    complexPdbBase64: z.string().min(1).max(8_000_000).optional(),
   })
   .strict();
 const interactionsData = z
@@ -166,6 +169,7 @@ const interactionsData = z
         })
         .strict(),
     ),
+    artifacts: z.array(inlineArtifactSchema).optional(),
     provenance: connectorProvenanceSchema,
   })
   .strict();
@@ -332,6 +336,9 @@ export class DockingController {
         if (value.mode === 'VINA') {
           return this.runVinaDocking(value);
         }
+        if (value.fallbackPolicy === 'LIVE_ONLY' || value.fallbackPolicy === 'CACHE_THEN_LIVE') {
+          throw new ToolExecutionError('FIXTURE_POLICY_CONFLICT', 'VALIDATION', 'FIXTURE docking mode requires a fixture-permitting fallback policy.');
+        }
         const status: z.infer<typeof sourceStatus> = 'FIXTURE';
         const dockingRunId = `${value.receptorId}-${value.ligandId}-${value.dockingBoxId}`;
         return {
@@ -375,9 +382,11 @@ export class DockingController {
         writeFile(receptorPath, receptorPdbqt),
         writeFile(ligandPath, ligandPdbqt),
       ]);
-      const result = await this.runtime.runCommand(command, [
-        '--receptor', receptorPath,
-        '--ligand', ligandPath,
+      const useWsl = process.platform === 'win32' && environment.VINA_WSL_DISTRO.length > 0;
+      const result = await this.runtime.runCommand(useWsl ? 'wsl.exe' : command, [
+        ...(useWsl ? ['-d', environment.VINA_WSL_DISTRO, '--', command] : []),
+        '--receptor', useWsl ? windowsPathToWsl(receptorPath) : receptorPath,
+        '--ligand', useWsl ? windowsPathToWsl(ligandPath) : ligandPath,
         '--center_x', String(value.box.center.x),
         '--center_y', String(value.box.center.y),
         '--center_z', String(value.box.center.z),
@@ -388,7 +397,7 @@ export class DockingController {
         '--num_modes', String(value.numModes),
         '--cpu', String(value.cpu),
         '--seed', String(value.seed),
-        '--out', posePath,
+        '--out', useWsl ? windowsPathToWsl(posePath) : posePath,
       ]);
       const posePdbqt = await readFile(posePath, 'utf8');
       const poses = parseVinaPoseFile(dockingRunId, posePdbqt);
@@ -397,6 +406,7 @@ export class DockingController {
       }
       const receptorPdb = pdbFromPdbqt(receptorPdbqt);
       const topPosePdb = pdbFromPdbqt(firstPdbqtModel(posePdbqt));
+      const complexPdb = dockingComplexPdb(receptorPdb, topPosePdb);
       const viewerHtml = dockingViewerHtml(dockingRunId, receptorPdb, topPosePdb);
       const log = `${result.stdout}\n${result.stderr}`;
       const files = [
@@ -405,6 +415,7 @@ export class DockingController {
         { path: 'poses.pdbqt', data: Buffer.from(posePdbqt) },
         { path: 'receptor.pdb', data: Buffer.from(receptorPdb) },
         { path: 'top_pose.pdb', data: Buffer.from(topPosePdb) },
+        { path: 'complex.pdb', data: Buffer.from(complexPdb) },
         { path: 'viewer.html', data: Buffer.from(viewerHtml) },
         { path: 'vina.log', data: Buffer.from(log) },
         { path: 'box.json', data: Buffer.from(JSON.stringify(value.box, null, 2)) },
@@ -422,6 +433,7 @@ export class DockingController {
         poses,
         artifacts: [
           inlineArtifact(`${dockingRunId}-poses`, 'poses.pdbqt', 'chemical/x-pdbqt', `mcp://docking/${value.runId}/poses.pdbqt`, posePdbqt),
+          inlineArtifact(`${dockingRunId}-complex`, 'complex.pdb', 'chemical/x-pdb', `mcp://docking/${value.runId}/complex.pdb`, complexPdb),
           inlineArtifact(`${dockingRunId}-viewer`, 'viewer.html', 'text/html', `mcp://docking/${value.runId}/viewer.html`, viewerHtml),
           inlineArtifact(`${dockingRunId}-bundle`, 'docking-bundle.zip', 'application/zip', `mcp://docking/${value.runId}/docking-bundle.zip`, bundle),
         ],
@@ -444,7 +456,7 @@ export class DockingController {
 
   @Tool({
     name: 'cluster_docking_poses',
-    description: 'Cluster docking poses from structured docking output.',
+    description: 'Cluster actual Vina pose coordinates by ligand RMSD, or replay an explicit fixture.',
     inputSchema: clusterInput,
     examples: {
       request: {
@@ -465,25 +477,62 @@ export class DockingController {
       inputSchema: clusterInput,
       dataSchema: clusterData,
       context,
-      operation: (value) => ({
-        dockingRunId: value.dockingRunId,
-        clusters: [
-          {
+      operation: (value) => {
+        if (value.method !== 'FIXTURE') {
+          if (!value.posesPdbqtBase64) {
+            throw new ToolExecutionError('CLUSTER_COORDINATES_REQUIRED', 'VALIDATION', 'Coordinate clustering requires actual Vina poses PDBQT bytes.');
+          }
+          const pdbqt = decodePdbqt(value.posesPdbqtBase64, 'poses');
+          const coordinates = parsePdbqtModels(pdbqt);
+          if (coordinates.length !== value.poses.length || coordinates[0]?.length === 0 || coordinates.some((model) => model.length !== coordinates[0]?.length || model.some((point) => point.some((axis) => !Number.isFinite(axis))))) {
+            throw new ToolExecutionError('CLUSTER_POSES_MISMATCH', 'VALIDATION', 'Pose count or atom ordering does not match Vina coordinates.');
+          }
+          const distances = coordinates.map((left) => coordinates.map((right) => poseRmsd(left, right)));
+          const groups = clusterByRmsd(distances, value.rmsdThresholdAngstrom, value.method);
+          const outliers: string[] = [];
+          const clusters = groups.flatMap((group, index) => {
+            if (value.method === 'DBSCAN' && group.length === 1) {
+              outliers.push(value.poses[group[0]!]!.poseId);
+              return [];
+            }
+            const ranked = group.map((poseIndex) => value.poses[poseIndex]!).sort((a, b) => a.affinityKcalMol - b.affinityKcalMol);
+            return [{
+              clusterId: `${value.dockingRunId}-cluster-${index + 1}`,
+              poseIds: group.map((poseIndex) => value.poses[poseIndex]!.poseId),
+              representativePoseId: ranked[0]!.poseId,
+              stabilityScore: group.length / value.poses.length,
+            }];
+          });
+          return {
+            dockingRunId: value.dockingRunId,
+            clusters,
+            outlierPoseIds: outliers,
+            provenance: provenance('ligand-rmsd-clusterer', value.method, 'LIVE', {
+              posesSha256: createHash('sha256').update(pdbqt).digest('hex'),
+              rmsdThresholdAngstrom: value.rmsdThresholdAngstrom,
+              poseCount: value.poses.length,
+              stabilityScoreDefinition: 'cluster-size fraction; not thermodynamic stability',
+            }),
+          };
+        }
+        return {
+          dockingRunId: value.dockingRunId,
+          clusters: [{
             clusterId: `${value.dockingRunId}-cluster-1`,
             poseIds: value.poses.map((pose) => pose.poseId),
-            representativePoseId: value.poses[0]?.poseId ?? `${value.dockingRunId}-pose-1`,
+            representativePoseId: value.poses[0]!.poseId,
             stabilityScore: Math.min(1, value.poses.length / 3),
-          },
-        ],
-        outlierPoseIds: [],
-        provenance: provenance('docking-clusterer', value.method, 'FIXTURE', value),
-      }),
+          }],
+          outlierPoseIds: [],
+          provenance: provenance('docking-clusterer', value.method, 'FIXTURE', value),
+        };
+      },
     });
   }
 
   @Tool({
     name: 'extract_interactions',
-    description: 'Replay fixture interactions; live PLIP extraction currently fails until complex input and parsing are implemented.',
+    description: 'Extract measured protein-ligand contacts from a supplied complex PDB using PLIP, or replay an explicit fixture.',
     inputSchema: interactionsInput,
     examples: {
       request: {
@@ -506,11 +555,47 @@ export class DockingController {
       context,
       operation: async (value) => {
         const environment = loadMcpEnvironment();
-        if (environment.PLIP_ENABLED || this.runtimeInjected) {
-          throw new ToolExecutionError(
-            'PLIP_INPUT_AND_PARSER_REQUIRED', 'CONNECTOR',
-            'Live interaction extraction requires a protein-ligand complex file and parsed PLIP output; no interactions were fabricated.',
-          );
+        if (value.method === 'plip') {
+          if (!environment.PLIP_ENABLED && !this.runtimeInjected) {
+            throw new ToolExecutionError('PLIP_NOT_CONFIGURED', 'CONNECTOR', 'PLIP is not enabled.');
+          }
+          if (!value.complexPdbBase64 || value.representativePoseIds.length !== 1) {
+            throw new ToolExecutionError('PLIP_COMPLEX_REQUIRED', 'VALIDATION', 'PLIP requires one representative pose and its actual complex PDB bytes.');
+          }
+          const complex = Buffer.from(value.complexPdbBase64, 'base64');
+          if (complex.byteLength === 0 || complex.byteLength > 5_000_000 || !complex.toString('utf8').includes('HETATM')) {
+            throw new ToolExecutionError('PLIP_COMPLEX_INVALID', 'VALIDATION', 'Complex PDB must contain a ligand HETATM record.');
+          }
+          const directory = await mkdtemp(join(tmpdir(), 'immunograph-plip-'));
+          try {
+            const inputPath = join(directory, 'complex.pdb');
+            const outputPath = join(directory, 'interactions.json');
+            await writeFile(inputPath, complex);
+            const script = fileURLToPath(new URL('../../../scripts/live/extract_plip.py', import.meta.url));
+            await this.runtime.runCommand(environment.SCIENTIFIC_PYTHON_COMMAND, [script, inputPath, outputPath]);
+            const extracted = JSON.parse(await readFile(outputPath, 'utf8')) as {
+              interactions: Array<{ interactionType: 'HYDROGEN_BOND' | 'HYDROPHOBIC' | 'IONIC'; residueRef: string; distanceAngstrom: number }>;
+              xml: string;
+            };
+            if (!Array.isArray(extracted.interactions) || typeof extracted.xml !== 'string') {
+              throw new ToolExecutionError('PLIP_OUTPUT_INVALID', 'CONNECTOR', 'PLIP output could not be parsed.');
+            }
+            return {
+              dockingRunId: value.dockingRunId,
+              interactions: extracted.interactions.map((item) => ({ ...item, poseId: value.representativePoseIds[0]! })),
+              artifacts: [inlineArtifact(`${value.dockingRunId}-plip-xml`, 'plip-report.xml', 'application/xml', `mcp://docking/${value.runId}/plip-report.xml`, extracted.xml)],
+              provenance: provenance('plip', 'extract_interactions', 'LIVE', {
+                dockingRunId: value.dockingRunId,
+                poseId: value.representativePoseIds[0],
+                complexSha256: createHash('sha256').update(complex).digest('hex'),
+              }),
+            };
+          } finally {
+            await rm(directory, { recursive: true, force: true });
+          }
+        }
+        if (value.method !== 'fixture-interaction-extraction') {
+          throw new ToolExecutionError('INTERACTION_METHOD_UNSUPPORTED', 'VALIDATION', 'Use plip or explicit fixture extraction.');
         }
         return {
           dockingRunId: value.dockingRunId,
@@ -596,6 +681,63 @@ function pdbFromPdbqt(contents: string): string {
     .map((line) => line.slice(0, 66));
   if (atoms.length === 0) throw new ToolExecutionError('PDBQT_INVALID', 'CONNECTOR', 'No 3D atoms found for viewer export.');
   return `${atoms.join('\n')}\nEND\n`;
+}
+
+function parsePdbqtModels(contents: string): Array<Array<[number, number, number]>> {
+  const models = [...contents.matchAll(/^MODEL\s+\d+\s*$([\s\S]*?)^ENDMDL\s*$/gmu)];
+  return models.map((match) => (match[1] ?? '').split(/\r?\n/u)
+    .filter((line) => line.startsWith('ATOM  ') || line.startsWith('HETATM'))
+    .map((line) => [Number(line.slice(30, 38)), Number(line.slice(38, 46)), Number(line.slice(46, 54))] as [number, number, number]));
+}
+
+function poseRmsd(left: Array<[number, number, number]>, right: Array<[number, number, number]>): number {
+  if (left.length === 0 || left.length !== right.length) return Number.POSITIVE_INFINITY;
+  let squares = 0;
+  for (let index = 0; index < left.length; index += 1) {
+    for (let axis = 0; axis < 3; axis += 1) {
+      const difference = left[index]![axis]! - right[index]![axis]!;
+      squares += difference * difference;
+    }
+  }
+  return Math.sqrt(squares / left.length);
+}
+
+function clusterByRmsd(distances: number[][], threshold: number, _method: 'DBSCAN' | 'HIERARCHICAL'): number[][] {
+  const remaining = new Set(distances.map((_, index) => index));
+  const groups: number[][] = [];
+  while (remaining.size > 0) {
+    const seed = remaining.values().next().value as number;
+    remaining.delete(seed);
+    const group = [seed];
+    for (let index = 0; index < group.length; index += 1) {
+      const current = group[index]!;
+      for (const neighbor of [...remaining]) {
+        if (distances[current]![neighbor]! <= threshold) {
+          remaining.delete(neighbor);
+          group.push(neighbor);
+        }
+      }
+    }
+    groups.push(group);
+  }
+  // With a two-pose minimum, connected components are DBSCAN clusters; isolated poses are noise.
+  return groups;
+}
+
+function dockingComplexPdb(receptorPdb: string, ligandPdb: string): string {
+  const receptor = receptorPdb.split(/\r?\n/u).filter((line) => line.startsWith('ATOM  '));
+  const ligand = ligandPdb.split(/\r?\n/u).filter((line) => line.startsWith('ATOM  ') || line.startsWith('HETATM')).map((line, index) => {
+    const atomName = line.slice(12, 16);
+    const element = (atomName.trim().match(/[A-Za-z]/u)?.[0] ?? 'C').toUpperCase();
+    return `HETATM${String(receptor.length + index + 1).padStart(5)} ${atomName} LIG Z   1    ${line.slice(30, 66).padEnd(36)}          ${element.padStart(2)}`;
+  });
+  return `${[...receptor, ...ligand, 'END'].join('\n')}\n`;
+}
+
+function windowsPathToWsl(path: string): string {
+  const match = /^([A-Za-z]):\\(.*)$/u.exec(path);
+  if (!match) throw new ToolExecutionError('VINA_PATH_INVALID', 'VALIDATION', 'WSL Vina requires a Windows drive path.');
+  return `/mnt/${match[1]!.toLowerCase()}/${match[2]!.replaceAll('\\', '/')}`;
 }
 
 function dockingViewerHtml(runId: string, receptorPdb: string, ligandPdb: string): string {
