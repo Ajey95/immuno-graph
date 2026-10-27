@@ -236,7 +236,7 @@ docker run --rm -p 3000:3000 \
   immunograph-mcp:local
 ```
 
-The package is prepared for npm but has **not** been published as part of this migration. Build and run from source until a release is made.
+The package and [MCP Registry manifest](server.json) are prepared for publication but have **not** been published as part of this migration. Build and run from source until a release is made.
 
 ## MCP usage
 

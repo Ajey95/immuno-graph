@@ -6,7 +6,8 @@ The migration branch prepares an open source MCP release. None of the steps belo
 - [ ] Review every public tool contract and the scientific provenance language.
 - [ ] Run CI on Windows/Linux with Node 20 and 22 and resolve every failure.
 - [ ] Build and run the Docker image, including authenticated HTTP through a TLS ingress.
-- [ ] Confirm `npm pack --dry-run` contains the compiled server, `data/`, license, and docs.
+- [x] Confirm `npm pack --dry-run` contains the compiled server, `data/`, license, and docs.
+- [x] Confirm `package.json` `mcpName` matches `server.json` and validate the registry manifest against the official schema.
 - [ ] Publish the first `immunograph-mcp` npm package and verify installation from npm.
 - [ ] Create a matching GitHub release and publish a signed or traceable container image.
 - [ ] Register the published package in the official MCP Registry, then verify the listing.

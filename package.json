@@ -3,6 +3,7 @@
   "version": "0.2.0",
   "type": "module",
   "description": "Standard MCP server for provenance-aware computational epitope research tools",
+  "mcpName": "io.github.Ajey95/immunograph",
   "license": "MIT",
   "bin": {
     "immunograph-mcp": "dist/index.js"
@@ -15,7 +16,8 @@
     "README.md",
     "LICENSE",
     "SECURITY.md",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "server.json"
   ],
   "scripts": {
     "dev": "tsx src/index.ts",
