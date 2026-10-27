@@ -10,6 +10,7 @@ import {
   unitIntervalSchema,
 } from '../common/contracts.js';
 import { executeTool, ToolExecutionError } from '../common/executor.js';
+import { inlineArtifact, inlineArtifactSchema } from '../common/inline-artifact.js';
 import { defaultLiveToolRuntime, type LiveToolRuntime } from '../common/live-runtime.js';
 import { loadMcpEnvironment } from '../config/environment.js';
 
@@ -42,6 +43,7 @@ const structureRecord = z
     format: z.enum(['PDB', 'MMCIF', 'PAE_JSON', 'FIXTURE_JSON']),
     chainIds: z.array(identifierSchema),
     artifactRef: identifierSchema,
+    artifact: inlineArtifactSchema.optional(),
     scientificUse: z.boolean(),
     validationStatus: z.enum(['SCIENTIFIC', 'DEMONSTRATION_ONLY', 'VERIFIED_FIXTURE']),
   })
@@ -335,6 +337,13 @@ export class StructureController {
           );
     }
     const chainIds = extractPdbChainIds(contents);
+    if (chainIds.length === 0) {
+      throw new ToolExecutionError(
+        'LIVE_STRUCTURE_INVALID',
+        'CONNECTOR',
+        'The downloaded structure has no PDB atom records with chain IDs.',
+      );
+    }
     const connectorId = value.source === 'RCSB_PDB' ? 'rcsb-pdb' : 'alphafold-db';
     return {
       structure: {
@@ -344,8 +353,15 @@ export class StructureController {
         accession: value.accession,
         sourceStatus: 'LIVE' as const,
         format: 'PDB' as const,
-        chainIds: chainIds.length > 0 ? chainIds : ['A'],
+        chainIds,
         artifactRef,
+        artifact: inlineArtifact(
+          `${value.runId}-${value.accession}-structure`,
+          `${value.accession}.pdb`,
+          'chemical/x-pdb',
+          artifactRef,
+          contents,
+        ),
         scientificUse: true,
         validationStatus: 'SCIENTIFIC' as const,
       },
@@ -406,7 +422,7 @@ export class StructureController {
 
   @Tool({
     name: 'map_epitopes_to_structure',
-    description: 'Map epitope candidate coordinates to a validated structure reference.',
+    description: 'Replay fixture coordinate mappings; direct sequence-to-structure alignment is not implemented.',
     inputSchema: epitopeMappingInput,
     examples: {
       request: {
@@ -427,8 +443,11 @@ export class StructureController {
       inputSchema: epitopeMappingInput,
       dataSchema: epitopeMappingData,
       context,
-      operation: (value) => ({
-        mappings: value.candidates.map((candidate) => ({
+      operation: (value) => {
+        if (value.mappingMode === 'DIRECT_COORDINATE') {
+          throw new ToolExecutionError('STRUCTURE_MAPPING_INPUT_REQUIRED', 'VALIDATION', 'Direct mapping requires residue-level structure coordinates and sequence alignment.');
+        }
+        return { mappings: value.candidates.map((candidate) => ({
           candidateId: candidate.candidateId,
           structureId: value.structureId,
           chainId: candidate.chainId ?? 'A',
@@ -438,7 +457,8 @@ export class StructureController {
           confidence: value.mappingMode === 'FIXTURE' ? 0.7 : 0.85,
         })),
         provenance: provenance('structure-mapper', 'map_epitopes_to_structure', 'FIXTURE', value),
-      }),
+        };
+      },
     });
   }
 
@@ -475,22 +495,7 @@ export class StructureController {
       operation: async (value) => {
         const environment = loadMcpEnvironment();
         if (value.method === 'freesasa' && (environment.FREESASA_ENABLED || this.runtimeInjected)) {
-          const command = process.env.FREESASA_COMMAND ?? 'freesasa';
-          const result = await this.runtime.runCommand(command, [
-            value.mappings[0]?.structureId ?? 'structure.pdb',
-            '--mappings',
-            JSON.stringify(value.mappings),
-          ]);
-          const score = parseFirstUnitInterval(result.stdout);
-          return {
-            accessibility: value.mappings.map((mapping) => ({
-              candidateId: mapping.candidateId,
-              surfaceAccessibility: score,
-              method: value.method,
-              status: 'CALCULATED' as const,
-            })),
-            provenance: provenance('freesasa', value.method, 'LIVE', value),
-          };
+          throw new ToolExecutionError('FREESASA_STRUCTURE_REQUIRED', 'VALIDATION', 'Live FreeSASA requires PDB coordinates and a residue mapping; no accessibility score was fabricated.');
         }
         return {
           accessibility: value.mappings.map((mapping) => ({
@@ -524,6 +529,9 @@ export class StructureController {
       dataSchema: confidenceData,
       context,
       operation: (value) => {
+        if (value.sourceStatus === 'LIVE' && Object.keys(value.confidenceMetrics ?? {}).length === 0) {
+          throw new ToolExecutionError('CONFIDENCE_METRICS_REQUIRED', 'VALIDATION', 'Live structure confidence requires measured confidence metrics.');
+        }
         const metricValues = Object.values(value.confidenceMetrics ?? {});
         const score =
           metricValues.length === 0
@@ -559,7 +567,7 @@ export class StructureController {
   @Tool({
     name: 'detect_binding_pockets',
     description:
-      'Detect binding pockets with fpocket when configured, otherwise fail or fixture-replay.',
+      'Replay a fixture pocket; live fpocket parsing currently fails explicitly.',
     inputSchema: pocketInput,
     examples: {
       request: {
@@ -583,14 +591,7 @@ export class StructureController {
       operation: async (value) => {
         const environment = loadMcpEnvironment();
         if (value.method === 'fpocket' && (environment.FPOCKET_ENABLED || this.runtimeInjected)) {
-          const result = await this.runtime.runCommand(process.env.FPOCKET_COMMAND ?? 'fpocket', [
-            '-f',
-            value.structureArtifactRef,
-          ]);
-          return {
-            pockets: parseFpocketPockets(value.structureId, result.stdout),
-            provenance: provenance('fpocket', value.method, 'LIVE', value),
-          };
+          throw new ToolExecutionError('FPOCKET_FILE_AND_PARSER_REQUIRED', 'CONNECTOR', 'Live fpocket requires a local PDB input and parsed pocket coordinates; no origin-centered pocket was fabricated.');
         }
         return {
           pockets: [
@@ -611,7 +612,7 @@ export class StructureController {
 
   @Tool({
     name: 'create_molstar_view',
-    description: 'Create a Mol* view-state reference for structure or docking visualization.',
+    description: 'Return a fixture Mol* state reference; live Mol* export currently fails explicitly.',
     inputSchema: molstarInput,
     examples: {
       request: {
@@ -636,6 +637,9 @@ export class StructureController {
       operation: (value) => {
         const environment = loadMcpEnvironment();
         const live = environment.MOLSTAR_ENABLED || this.runtimeInjected;
+        if (live) {
+          throw new ToolExecutionError('MOLSTAR_EXPORT_REQUIRED', 'CONNECTOR', 'A Mol* state requires actual structure content and viewer export; no live state reference was fabricated.');
+        }
         return {
           viewer: {
             viewId: value.viewId,
@@ -646,13 +650,13 @@ export class StructureController {
               ? {}
               : { ligandArtifactRef: value.ligandArtifactRef }),
             mode: value.mode,
-            sourceStatus: live ? ('LIVE' as const) : ('FIXTURE' as const),
-            scientificUse: live,
+            sourceStatus: 'FIXTURE' as const,
+            scientificUse: false,
           },
           provenance: provenance(
             'molstar',
             'create_molstar_view',
-            live ? 'LIVE' : 'FIXTURE',
+            'FIXTURE',
             value,
           ),
         };
@@ -692,44 +696,6 @@ function extractPdbChainIds(contents: string): string[] {
 function stableUnitInterval(value: unknown): number {
   const hash = canonicalJsonSha256(value as never);
   return Number.parseInt(hash.slice(0, 8), 16) / 0xffffffff;
-}
-
-function parseFirstUnitInterval(output: string): number {
-  const matches = [...output.matchAll(/(?:^|\s)(0\.\d+|1\.0+)(?:\s|$)/gu)];
-  const last = matches.at(-1);
-  return last?.[1] === undefined ? 0.5 : Number(last[1]);
-}
-
-function parseFpocketPockets(structureId: string, output: string) {
-  const match =
-    output.match(
-      /Pocket\s+(\d+)\s+Score\s+(-?\d+(?:\.\d+)?)\s+DrugScore\s+(0(?:\.\d+)?|1(?:\.0+)?)/iu,
-    ) ??
-    output.match(
-      /Pocket\s+(\d+)\s*:[\s\S]*?Score\s*:\s*(-?\d+(?:\.\d+)?)[\s\S]*?Druggability\s+Score\s*:\s*(0(?:\.\d+)?|1(?:\.0+)?)/iu,
-    );
-  if (match === null) {
-    return [
-      {
-        pocketId: `${structureId}-pocket-1`,
-        structureId,
-        score: 1,
-        druggabilityScore: 0.5,
-        center: { x: 0, y: 0, z: 0 },
-        sourceStatus: 'LIVE' as const,
-      },
-    ];
-  }
-  return [
-    {
-      pocketId: `${structureId}-pocket-${match[1]}`,
-      structureId,
-      score: Number(match[2]),
-      druggabilityScore: Number(match[3]),
-      center: { x: 0, y: 0, z: 0 },
-      sourceStatus: 'LIVE' as const,
-    },
-  ];
 }
 
 function provenance(

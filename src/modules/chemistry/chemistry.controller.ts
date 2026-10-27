@@ -1,3 +1,9 @@
+import { createHash } from 'node:crypto';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { canonicalJsonSha256 } from '../../lib/algorithms/index.js';
 import { ControllerDecorator, ToolDecorator as Tool } from '../common/mcp-compat.js';
 import type { ExecutionContext } from '../common/mcp-compat.js';
@@ -9,6 +15,7 @@ import {
   identifierSchema,
 } from '../common/contracts.js';
 import { executeTool, ToolExecutionError } from '../common/executor.js';
+import { inlineArtifact, inlineArtifactSchema } from '../common/inline-artifact.js';
 import { defaultLiveToolRuntime, type LiveToolRuntime } from '../common/live-runtime.js';
 import { loadMcpEnvironment } from '../config/environment.js';
 
@@ -140,6 +147,7 @@ const prepareLigandData = z
     ligandId: identifierSchema,
     compoundId: identifierSchema,
     artifactRef: identifierSchema,
+    artifacts: z.array(inlineArtifactSchema).optional(),
     format: z.enum(['PDBQT', 'SDF', 'FIXTURE_JSON']),
     sourceStatus,
     scientificUse: z.boolean(),
@@ -386,7 +394,7 @@ export class ChemistryController {
   @Tool({
     name: 'prepare_ligand',
     description:
-      'Prepare a ligand artifact reference through configured chemistry tooling or fixture fallback.',
+      'Generate real 3D SDF and PDBQT ligand bytes with RDKit/Meeko, or return an explicit fixture reference.',
     inputSchema: prepareLigandInput,
     examples: {
       request: {
@@ -409,23 +417,43 @@ export class ChemistryController {
       context,
       operation: async (value) => {
         const environment = loadMcpEnvironment();
-        if (environment.OPENBABEL_ENABLED || this.runtimeInjected) {
-          const command = process.env.OPENBABEL_COMMAND ?? 'obabel';
-          await this.runtime.runCommand(command, [
-            `-:${value.smiles}`,
-            '-ismi',
-            '-opdbqt',
-            '--gen3d',
-          ]);
-          return {
-            ligandId: `${value.compoundId}-ligand`,
-            compoundId: value.compoundId,
-            artifactRef: `mcp://ligands/${value.runId}/${value.compoundId}.pdbqt`,
-            format: 'PDBQT' as const,
-            sourceStatus: 'LIVE' as const,
-            scientificUse: true,
-            provenance: provenance('open-babel', value.preparationMethod, 'LIVE', value),
-          };
+        if (value.preparationMethod === 'meeko') {
+          if (!environment.MEEKO_ENABLED && !this.runtimeInjected) {
+            throw new ToolExecutionError('MEEKO_NOT_CONFIGURED', 'CONNECTOR', 'Meeko ligand preparation is not enabled.');
+          }
+          const directory = await mkdtemp(join(tmpdir(), 'immunograph-ligand-'));
+          try {
+            const sdfPath = join(directory, 'ligand.sdf');
+            const pdbqtPath = join(directory, 'ligand.pdbqt');
+            const script = fileURLToPath(new URL('../../../scripts/live/prepare_ligand.py', import.meta.url));
+            await this.runtime.runCommand(environment.MEEKO_PYTHON_COMMAND, [script, value.smiles, sdfPath, pdbqtPath]);
+            const [sdf, pdbqt] = await Promise.all([readFile(sdfPath), readFile(pdbqtPath)]);
+            if (!pdbqt.toString('utf8').includes('ATOM')) {
+              throw new ToolExecutionError('LIGAND_PDBQT_INVALID', 'CONNECTOR', 'Meeko produced no ligand atom coordinates.');
+            }
+            const artifactRef = `mcp://ligands/${value.runId}/${value.compoundId}.pdbqt`;
+            return {
+              ligandId: `${value.compoundId}-ligand`,
+              compoundId: value.compoundId,
+              artifactRef,
+              artifacts: [
+                inlineArtifact(`${value.runId}-${value.compoundId}-sdf`, 'ligand.sdf', 'chemical/x-mdl-sdfile', `mcp://ligands/${value.runId}/${value.compoundId}.sdf`, sdf),
+                inlineArtifact(`${value.runId}-${value.compoundId}-pdbqt`, 'ligand.pdbqt', 'chemical/x-pdbqt', artifactRef, pdbqt),
+              ],
+              format: 'PDBQT' as const,
+              sourceStatus: 'LIVE' as const,
+              scientificUse: true,
+              provenance: provenance('rdkit-meeko', 'prepare_ligand', 'LIVE', {
+                compoundId: value.compoundId,
+                smilesSha256: createHash('sha256').update(value.smiles).digest('hex'),
+              }),
+            };
+          } finally {
+            await rm(directory, { recursive: true, force: true });
+          }
+        }
+        if (value.preparationMethod !== 'fixture-ligand-preparation') {
+          throw new ToolExecutionError('LIGAND_METHOD_UNSUPPORTED', 'VALIDATION', 'Use meeko or explicit fixture preparation.');
         }
         return {
           ligandId: `${value.compoundId}-ligand`,
@@ -471,7 +499,7 @@ function parsePubChemProperty(payload: unknown, fallbackCid: string) {
     const first = payload.PropertyTable.Properties[0] as unknown;
     if (typeof first === 'object' && first !== null) {
       const record = first as Record<string, unknown>;
-      const smiles = record.IsomericSMILES;
+      const smiles = record.SMILES ?? record.IsomericSMILES;
       if (typeof smiles === 'string' && smiles.length > 0) {
         return {
           cid:
@@ -505,7 +533,7 @@ function rdkitDescriptorScript(): string {
     'if mol is None: raise SystemExit(2)',
     'rings = mol.GetRingInfo().AtomRings()',
     'print(json.dumps({"heavyAtomCount": mol.GetNumHeavyAtoms(), "heteroAtomCount": Lipinski.NumHeteroatoms(mol), "aromaticRingEstimate": sum(1 for ring in rings if all(mol.GetAtomWithIdx(i).GetIsAromatic() for i in ring)), "rotatableBondEstimate": Lipinski.NumRotatableBonds(mol)}))',
-  ].join('; ');
+  ].join('\n');
 }
 
 function parseDescriptorJson(output: string) {

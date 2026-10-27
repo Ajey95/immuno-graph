@@ -1,3 +1,9 @@
+import { createHash } from 'node:crypto';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { canonicalJsonSha256 } from '../../lib/algorithms/index.js';
 import { ControllerDecorator, ToolDecorator as Tool } from '../common/mcp-compat.js';
 import type { ExecutionContext } from '../common/mcp-compat.js';
@@ -10,7 +16,9 @@ import {
   unitIntervalSchema,
 } from '../common/contracts.js';
 import { executeTool, ToolExecutionError } from '../common/executor.js';
+import { inlineArtifact, inlineArtifactSchema } from '../common/inline-artifact.js';
 import { defaultLiveToolRuntime, type LiveToolRuntime } from '../common/live-runtime.js';
+import { buildStoredZip } from '../common/zip.js';
 import { loadMcpEnvironment } from '../config/environment.js';
 
 const CATEGORY = 'Docking Tools';
@@ -29,6 +37,7 @@ const prepareReceptorInput = z
     structureId: identifierSchema,
     chainIds: z.array(identifierSchema).min(1),
     preparationMethod: identifierSchema,
+    structurePdbBase64: z.string().min(1).max(8_000_000).optional(),
   })
   .strict();
 const prepareReceptorData = z
@@ -36,6 +45,7 @@ const prepareReceptorData = z
     receptorId: identifierSchema,
     structureId: identifierSchema,
     artifactRef: identifierSchema,
+    artifact: inlineArtifactSchema.optional(),
     format: z.enum(['PDBQT', 'PDB', 'FIXTURE_JSON']),
     sourceStatus,
     scientificUse: z.boolean(),
@@ -73,6 +83,13 @@ const runDockingInput = z
     dockingBoxId: identifierSchema,
     mode: z.enum(['VINA', 'FIXTURE']),
     fallbackPolicy,
+    receptorPdbqtBase64: z.string().min(1).max(8_000_000).optional(),
+    ligandPdbqtBase64: z.string().min(1).max(8_000_000).optional(),
+    box: dockingBoxInput.pick({ center: true, size: true }).optional(),
+    seed: z.number().int().nonnegative().default(42),
+    exhaustiveness: z.number().int().min(1).max(32).default(8),
+    numModes: z.number().int().min(1).max(20).default(5),
+    cpu: z.number().int().min(1).max(16).default(2),
   })
   .strict();
 const dockingPose = z
@@ -97,6 +114,7 @@ const runDockingData = z
       })
       .strict(),
     poses: z.array(dockingPose).min(1),
+    artifacts: z.array(inlineArtifactSchema).optional(),
     provenance: connectorProvenanceSchema,
   })
   .strict();
@@ -166,7 +184,7 @@ export class DockingController {
   @Tool({
     name: 'prepare_receptor',
     description:
-      'Prepare receptor artifact references for docking through local tools or fixture fallback.',
+      'Prepare real receptor PDBQT bytes with Meeko from supplied PDB coordinates, or return an explicit fixture reference.',
     inputSchema: prepareReceptorInput,
     examples: {
       request: {
@@ -189,18 +207,52 @@ export class DockingController {
       context,
       operation: async (value) => {
         const environment = loadMcpEnvironment();
-        if (environment.OPENBABEL_ENABLED || this.runtimeInjected) {
-          const command = process.env.OPENBABEL_COMMAND ?? 'obabel';
-          await this.runtime.runCommand(command, [value.structureId, '-opdbqt', '-xr']);
-          return {
-            receptorId: `${value.structureId}-receptor`,
-            structureId: value.structureId,
-            artifactRef: `mcp://receptors/${value.runId}/${value.structureId}.pdbqt`,
-            format: 'PDBQT' as const,
-            sourceStatus: 'LIVE' as const,
-            scientificUse: true,
-            provenance: provenance('open-babel', value.preparationMethod, 'LIVE', value),
-          };
+        if (value.preparationMethod === 'meeko') {
+          if (!environment.MEEKO_ENABLED && !this.runtimeInjected) {
+            throw new ToolExecutionError('MEEKO_NOT_CONFIGURED', 'CONNECTOR', 'Meeko receptor preparation is not enabled.');
+          }
+          if (!value.structurePdbBase64) {
+            throw new ToolExecutionError('STRUCTURE_PDB_REQUIRED', 'VALIDATION', 'Meeko requires actual PDB bytes.');
+          }
+          const pdb = Buffer.from(selectReceptorChains(
+            Buffer.from(value.structurePdbBase64, 'base64').toString('utf8'),
+            value.chainIds,
+          ));
+          const directory = await mkdtemp(join(tmpdir(), 'immunograph-receptor-'));
+          try {
+            const inputPath = join(directory, 'receptor.pdb');
+            const outputPath = join(directory, 'receptor.pdbqt');
+            await writeFile(inputPath, pdb);
+            const script = fileURLToPath(new URL('../../../scripts/live/prepare_receptor.py', import.meta.url));
+            await this.runtime.runCommand(environment.MEEKO_PYTHON_COMMAND, [script, inputPath, outputPath]);
+            const prepared = await readFile(outputPath);
+            decodePdbqt(prepared.toString('base64'), 'receptor');
+            return {
+              receptorId: `${value.structureId}-receptor`,
+              structureId: value.structureId,
+              artifactRef: `mcp://receptors/${value.runId}/${value.structureId}.pdbqt`,
+              artifact: inlineArtifact(
+                `${value.runId}-${value.structureId}-receptor`,
+                'receptor.pdbqt',
+                'chemical/x-pdbqt',
+                `mcp://receptors/${value.runId}/${value.structureId}.pdbqt`,
+                prepared,
+              ),
+              format: 'PDBQT' as const,
+              sourceStatus: 'LIVE' as const,
+              scientificUse: true,
+              provenance: provenance('meeko', 'prepare_receptor', 'LIVE', {
+                structureId: value.structureId,
+                chainIds: value.chainIds,
+                inputSha256: createHash('sha256').update(pdb).digest('hex'),
+              }),
+            };
+          } finally {
+            await rm(directory, { recursive: true, force: true });
+          }
+        }
+        if (value.preparationMethod !== 'fixture-receptor-preparation') {
+          throw new ToolExecutionError('RECEPTOR_METHOD_UNSUPPORTED', 'VALIDATION', 'Use meeko or explicit fixture preparation.');
         }
         return {
           receptorId: `${value.structureId}-receptor`,
@@ -253,7 +305,7 @@ export class DockingController {
 
   @Tool({
     name: 'run_docking',
-    description: 'Run configured docking or replay an approved deterministic docking fixture.',
+    description: 'Run AutoDock Vina on supplied PDBQT bytes and export real 3D poses, viewer HTML, and ZIP, or replay an explicit fixture.',
     inputSchema: runDockingInput,
     examples: {
       request: {
@@ -278,12 +330,7 @@ export class DockingController {
       context,
       operation: async (value) => {
         if (value.mode === 'VINA') {
-          try {
-            const live = await this.runVinaDocking(value);
-            return live;
-          } catch (error) {
-            if (!fixtureFallbackAllowed(value.fallbackPolicy)) throw error;
-          }
+          return this.runVinaDocking(value);
         }
         const status: z.infer<typeof sourceStatus> = 'FIXTURE';
         const dockingRunId = `${value.receptorId}-${value.ligandId}-${value.dockingBoxId}`;
@@ -308,50 +355,91 @@ export class DockingController {
     if (!environment.VINA_ENABLED && !this.runtimeInjected) {
       throw dockingUnavailable(value.fallbackPolicy);
     }
-    const command = process.env.VINA_COMMAND ?? 'vina';
-    const dockingRunId = `${value.receptorId}-${value.ligandId}-${value.dockingBoxId}`;
-    const result = await this.runtime.runCommand(command, [
-      '--receptor',
-      value.receptorId,
-      '--ligand',
-      value.ligandId,
-      '--center_x',
-      '0',
-      '--center_y',
-      '0',
-      '--center_z',
-      '0',
-      '--size_x',
-      '20',
-      '--size_y',
-      '20',
-      '--size_z',
-      '20',
-      '--out',
-      `${dockingRunId}.pdbqt`,
-    ]);
-    const poses = parseVinaPoses(dockingRunId, `${result.stdout}\n${result.stderr}`);
-    if (poses.length === 0) {
+    if (!value.receptorPdbqtBase64 || !value.ligandPdbqtBase64 || !value.box) {
       throw new ToolExecutionError(
-        'VINA_OUTPUT_INVALID',
-        'CONNECTOR',
-        'AutoDock Vina completed but no docking poses could be parsed.',
-        false,
-        { dockingRunId },
+        'VINA_INPUT_FILES_REQUIRED',
+        'VALIDATION',
+        'Vina mode requires receptor and ligand PDBQT bytes plus a docking box.',
       );
     }
-    return {
-      dockingRun: {
-        dockingRunId,
-        receptorId: value.receptorId,
-        ligandId: value.ligandId,
-        dockingBoxId: value.dockingBoxId,
-        sourceStatus: 'LIVE' as const,
-        scientificUse: true,
-      },
-      poses,
-      provenance: provenance('autodock-vina', 'run_docking', 'LIVE', value),
-    };
+    const receptorPdbqt = decodePdbqt(value.receptorPdbqtBase64, 'receptor');
+    const ligandPdbqt = decodePdbqt(value.ligandPdbqtBase64, 'ligand');
+    const command = process.env.VINA_COMMAND ?? 'vina';
+    const dockingRunId = `${value.receptorId}-${value.ligandId}-${value.dockingBoxId}`;
+    const directory = await mkdtemp(join(tmpdir(), 'immunograph-vina-'));
+    try {
+      const receptorPath = join(directory, 'receptor.pdbqt');
+      const ligandPath = join(directory, 'ligand.pdbqt');
+      const posePath = join(directory, 'poses.pdbqt');
+      await Promise.all([
+        writeFile(receptorPath, receptorPdbqt),
+        writeFile(ligandPath, ligandPdbqt),
+      ]);
+      const result = await this.runtime.runCommand(command, [
+        '--receptor', receptorPath,
+        '--ligand', ligandPath,
+        '--center_x', String(value.box.center.x),
+        '--center_y', String(value.box.center.y),
+        '--center_z', String(value.box.center.z),
+        '--size_x', String(value.box.size.x),
+        '--size_y', String(value.box.size.y),
+        '--size_z', String(value.box.size.z),
+        '--exhaustiveness', String(value.exhaustiveness),
+        '--num_modes', String(value.numModes),
+        '--cpu', String(value.cpu),
+        '--seed', String(value.seed),
+        '--out', posePath,
+      ]);
+      const posePdbqt = await readFile(posePath, 'utf8');
+      const poses = parseVinaPoseFile(dockingRunId, posePdbqt);
+      if (poses.length === 0) {
+        throw new ToolExecutionError('VINA_OUTPUT_INVALID', 'CONNECTOR', 'Vina produced no parseable 3D poses.');
+      }
+      const receptorPdb = pdbFromPdbqt(receptorPdbqt);
+      const topPosePdb = pdbFromPdbqt(firstPdbqtModel(posePdbqt));
+      const viewerHtml = dockingViewerHtml(dockingRunId, receptorPdb, topPosePdb);
+      const log = `${result.stdout}\n${result.stderr}`;
+      const files = [
+        { path: 'receptor.pdbqt', data: Buffer.from(receptorPdbqt) },
+        { path: 'ligand.pdbqt', data: Buffer.from(ligandPdbqt) },
+        { path: 'poses.pdbqt', data: Buffer.from(posePdbqt) },
+        { path: 'receptor.pdb', data: Buffer.from(receptorPdb) },
+        { path: 'top_pose.pdb', data: Buffer.from(topPosePdb) },
+        { path: 'viewer.html', data: Buffer.from(viewerHtml) },
+        { path: 'vina.log', data: Buffer.from(log) },
+        { path: 'box.json', data: Buffer.from(JSON.stringify(value.box, null, 2)) },
+      ];
+      const bundle = buildStoredZip(files);
+      return {
+        dockingRun: {
+          dockingRunId,
+          receptorId: value.receptorId,
+          ligandId: value.ligandId,
+          dockingBoxId: value.dockingBoxId,
+          sourceStatus: 'LIVE' as const,
+          scientificUse: true,
+        },
+        poses,
+        artifacts: [
+          inlineArtifact(`${dockingRunId}-poses`, 'poses.pdbqt', 'chemical/x-pdbqt', `mcp://docking/${value.runId}/poses.pdbqt`, posePdbqt),
+          inlineArtifact(`${dockingRunId}-viewer`, 'viewer.html', 'text/html', `mcp://docking/${value.runId}/viewer.html`, viewerHtml),
+          inlineArtifact(`${dockingRunId}-bundle`, 'docking-bundle.zip', 'application/zip', `mcp://docking/${value.runId}/docking-bundle.zip`, bundle),
+        ],
+        provenance: provenance('autodock-vina', 'run_docking', 'LIVE', {
+          runId: value.runId,
+          receptorId: value.receptorId,
+          ligandId: value.ligandId,
+          box: value.box,
+          seed: value.seed,
+          exhaustiveness: value.exhaustiveness,
+          numModes: value.numModes,
+          receptorSha256: createHash('sha256').update(receptorPdbqt).digest('hex'),
+          ligandSha256: createHash('sha256').update(ligandPdbqt).digest('hex'),
+        }),
+      };
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   }
 
   @Tool({
@@ -395,7 +483,7 @@ export class DockingController {
 
   @Tool({
     name: 'extract_interactions',
-    description: 'Extract interaction summaries from representative docking poses.',
+    description: 'Replay fixture interactions; live PLIP extraction currently fails until complex input and parsing are implemented.',
     inputSchema: interactionsInput,
     examples: {
       request: {
@@ -419,21 +507,10 @@ export class DockingController {
       operation: async (value) => {
         const environment = loadMcpEnvironment();
         if (environment.PLIP_ENABLED || this.runtimeInjected) {
-          await this.runtime.runCommand(process.env.PLIP_COMMAND ?? 'plip', [
-            '-f',
-            value.dockingRunId,
-            '-x',
-          ]);
-          return {
-            dockingRunId: value.dockingRunId,
-            interactions: value.representativePoseIds.map((poseId, index) => ({
-              poseId,
-              interactionType: 'HYDROGEN_BOND' as const,
-              residueRef: `A:${index + 1}`,
-              distanceAngstrom: 2.9 + index * 0.1,
-            })),
-            provenance: provenance('plip', value.method, 'LIVE', value),
-          };
+          throw new ToolExecutionError(
+            'PLIP_INPUT_AND_PARSER_REQUIRED', 'CONNECTOR',
+            'Live interaction extraction requires a protein-ligand complex file and parsed PLIP output; no interactions were fabricated.',
+          );
         }
         return {
           dockingRunId: value.dockingRunId,
@@ -470,23 +547,73 @@ function dockingUnavailable(policy: z.infer<typeof fallbackPolicy>): ToolExecuti
   );
 }
 
-function fixtureFallbackAllowed(policy: z.infer<typeof fallbackPolicy>): boolean {
-  return policy === 'CACHE_THEN_LIVE_THEN_FIXTURE' || policy === 'LIVE_THEN_CACHE_THEN_FIXTURE';
+function decodePdbqt(encoded: string, role: string): string {
+  const bytes = Buffer.from(encoded, 'base64');
+  if (bytes.byteLength === 0 || bytes.byteLength > 5_000_000) {
+    throw new ToolExecutionError('PDBQT_SIZE_INVALID', 'VALIDATION', `${role} PDBQT size is invalid.`);
+  }
+  const text = bytes.toString('utf8');
+  const atomLine = text.split(/\r?\n/u).find((line) => line.startsWith('ATOM  ') || line.startsWith('HETATM'));
+  if (!atomLine || ![30, 38, 46].every((start) => Number.isFinite(Number(atomLine.slice(start, start + 8))))) {
+    throw new ToolExecutionError('PDBQT_INVALID', 'VALIDATION', `${role} PDBQT has no valid 3D atom coordinates.`);
+  }
+  return text;
 }
 
-function parseVinaPoses(dockingRunId: string, output: string) {
-  return output
-    .split(/\r?\n/u)
-    .map((line) => line.trim())
-    .map((line) => line.match(/^(\d+)\s+(-?\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)/u))
-    .filter((match): match is RegExpMatchArray => match !== null)
-    .map((match) => ({
-      poseId: `${dockingRunId}-pose-${match[1]}`,
-      rank: Number(match[1]),
-      affinityKcalMol: Number(match[2]),
-      rmsdLowerBound: Number(match[3]),
-      rmsdUpperBound: Number(match[4]),
+function selectReceptorChains(pdb: string, chainIds: string[]): string {
+  const allowed = new Set(chainIds);
+  const atoms = pdb.split(/\r?\n/u).filter((line) =>
+    line.startsWith('ATOM  ') && allowed.has(line[21] ?? ''),
+  );
+  if (atoms.length === 0) {
+    throw new ToolExecutionError('STRUCTURE_PDB_INVALID', 'VALIDATION', 'No protein atom records match the selected chains.');
+  }
+  return `${atoms.join('\n')}\nEND\n`;
+}
+
+function parseVinaPoseFile(dockingRunId: string, contents: string) {
+  if (!contents.includes('MODEL') || !contents.includes('ATOM')) return [];
+  return [...contents.matchAll(/^REMARK VINA RESULT:\s*(-?\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)/gmu)]
+    .map((match, index) => ({
+      poseId: `${dockingRunId}-pose-${index + 1}`,
+      rank: index + 1,
+      affinityKcalMol: Number(match[1]),
+      rmsdLowerBound: Number(match[2]),
+      rmsdUpperBound: Number(match[3]),
     }));
+}
+
+function firstPdbqtModel(contents: string): string {
+  const start = contents.indexOf('MODEL ');
+  if (start < 0) return contents;
+  const end = contents.indexOf('ENDMDL', start);
+  return contents.slice(start, end < 0 ? undefined : end);
+}
+
+function pdbFromPdbqt(contents: string): string {
+  const atoms = contents.split(/\r?\n/u)
+    .filter((line) => line.startsWith('ATOM  ') || line.startsWith('HETATM'))
+    .map((line) => line.slice(0, 66));
+  if (atoms.length === 0) throw new ToolExecutionError('PDBQT_INVALID', 'CONNECTOR', 'No 3D atoms found for viewer export.');
+  return `${atoms.join('\n')}\nEND\n`;
+}
+
+function dockingViewerHtml(runId: string, receptorPdb: string, ligandPdb: string): string {
+  const safe = (value: string) => JSON.stringify(value).replaceAll('<', '\\u003c');
+  return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ImmunoGraph docking ${runId.replaceAll(/[<>&"']/g, '')}</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/3Dmol/2.0.1/3Dmol-min.js"></script>
+<style>body{margin:0;font:14px system-ui;background:#101820;color:#fff}header{padding:12px 18px}#viewer{height:calc(100vh - 75px);width:100%}</style>
+</head><body><header>Docking run: ${runId.replaceAll(/[<>&"']/g, '')} · receptor (blue) · top pose (green)</header>
+<div id="viewer"></div><script>
+const viewer = $3Dmol.createViewer(document.getElementById('viewer'), {backgroundColor:'#101820'});
+viewer.addModel(${safe(receptorPdb)}, 'pdb');
+viewer.setStyle({model:0}, {cartoon:{color:'#65a9e8'}});
+viewer.addModel(${safe(ligandPdb)}, 'pdb');
+viewer.setStyle({model:1}, {stick:{colorscheme:'greenCarbon',radius:0.18}});
+viewer.zoomTo({model:1}); viewer.render();
+</script></body></html>`;
 }
 
 function provenance(

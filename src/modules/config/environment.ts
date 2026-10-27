@@ -104,6 +104,11 @@ const rawMcpEnvironmentSchema = z.object({
     .transform((v) => v === 'true')
     .default(false),
   OPENBABEL_COMMAND: z.string().min(1).default('obabel'),
+  MEEKO_ENABLED: z
+    .enum(['true', 'false'])
+    .transform((v) => v === 'true')
+    .default(false),
+  MEEKO_PYTHON_COMMAND: z.string().min(1).default('python'),
   DOCKING_ENABLED: z
     .enum(['true', 'false'])
     .transform((v) => v === 'true')

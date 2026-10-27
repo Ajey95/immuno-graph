@@ -11,6 +11,7 @@
   "files": [
     "dist",
     "data",
+    "scripts/live",
     "docs",
     ".env.example",
     "README.md",
