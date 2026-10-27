@@ -1,6 +1,6 @@
 import { canonicalJsonSha256 } from '../../lib/algorithms/index.js';
-import { ControllerDecorator, ToolDecorator as Tool } from '@nitrostack/core';
-import type { ExecutionContext } from '@nitrostack/core';
+import { ControllerDecorator, ToolDecorator as Tool } from '../common/mcp-compat.js';
+import type { ExecutionContext } from '../common/mcp-compat.js';
 import { z } from 'zod';
 
 import {

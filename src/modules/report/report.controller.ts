@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto';
 
 import { explainCandidate } from '../../lib/algorithms/index.js';
-import { ControllerDecorator, ToolDecorator } from '@nitrostack/core';
-import type { ExecutionContext } from '@nitrostack/core';
+import { ControllerDecorator, ToolDecorator } from '../common/mcp-compat.js';
+import type { ExecutionContext } from '../common/mcp-compat.js';
 import type { z } from 'zod';
 
 import type { CapabilityPort } from '../common/capability-port.js';
@@ -84,7 +84,7 @@ export class ReportController {
           provenanceSummary: {
             executionMode: snapshot.executionMode,
             scientificUse: snapshot.scientificUse,
-            generatedBy: 'NitroStack MCP generate_report',
+            generatedBy: 'ImmunoGraph MCP generate_report',
           },
           runQuality: snapshot.runQuality,
         };
@@ -346,7 +346,7 @@ function createMcpResearchPackageZip(input: {
       runId: input.runId,
       executionMode: 'MCP_AGENTIC_EXPORT',
       scientificUse: false,
-      generatedBy: 'One NitroStack MCP App',
+      generatedBy: 'One ImmunoGraph MCP server',
       ...snapshot?.run,
     }),
     jsonEntry('configuration.json', {
@@ -568,7 +568,7 @@ function createMcpResearchPackageZip(input: {
         schemaVersion: 'immunograph-report.v1',
         runId: input.runId,
         generatedAt,
-        generatedBy: 'NitroStack MCP export_research_package',
+        generatedBy: 'ImmunoGraph MCP export_research_package',
         limitations: [
           'This stateless MCP export preserves the required package structure.',
           'Persisted API exports include full run-specific database records when available.',
@@ -596,7 +596,7 @@ function createMcpResearchPackageZip(input: {
     requiredSections: input.requiredSections,
     includesCsvExports: true,
     includesAgentTrace: input.includeAgentTrace,
-    generatedBy: 'NitroStack MCP export_research_package',
+    generatedBy: 'ImmunoGraph MCP export_research_package',
     files: files.map((file) => ({
       path: file.path,
       sha256: checksums[file.path],

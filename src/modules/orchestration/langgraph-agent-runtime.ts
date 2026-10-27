@@ -106,7 +106,7 @@ export async function runLangGraphAgentWorkflow(
           purpose: 'WORKFLOW_PLANNING',
           prompt: input.objective,
           evidence: {
-            deploymentBoundary: 'One NitroStack MCP app',
+            deploymentBoundary: 'One standard MCP server',
             allowedRole:
               'Plan and route typed tools only; do not generate scientific prediction values.',
           },

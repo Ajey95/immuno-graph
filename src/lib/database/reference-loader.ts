@@ -140,7 +140,7 @@ function validateManifestCoverage(manifest: ReferenceManifest): void {
   }
 }
 
-async function loadManifestEntry<T extends z.ZodTypeAny>(
+async function loadManifestEntry<T extends z.ZodType<{ id: string; version: string }>>(
   directory: string,
   manifest: ReferenceManifest,
   id: ReferenceFileId,

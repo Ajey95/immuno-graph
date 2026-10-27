@@ -1,0 +1,9 @@
+.git
+.github
+node_modules
+dist
+tests
+*.log
+.env
+.tmp-*
+research-package-actual-docking-full.zip

@@ -11,8 +11,8 @@ import type {
   OverlapCandidate,
 } from '../../lib/algorithms/index.js';
 import { loadReferenceBundle } from '../../lib/database/mcp.js';
-import { ToolDecorator as Tool } from '@nitrostack/core';
-import type { ExecutionContext } from '@nitrostack/core';
+import { ToolDecorator as Tool } from '../common/mcp-compat.js';
+import type { ExecutionContext } from '../common/mcp-compat.js';
 import { z } from 'zod';
 
 import {

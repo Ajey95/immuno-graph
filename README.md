@@ -8,16 +8,16 @@
 <p align="center">
   <img alt="MCP server" src="https://img.shields.io/badge/MCP-single%20server-6144b1?style=flat-square" />
   <img alt="46 registered tools" src="https://img.shields.io/badge/tools-46-216e8a?style=flat-square" />
-  <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5.x-3178c6?style=flat-square" />
-  <img alt="NitroStack" src="https://img.shields.io/badge/runtime-NitroStack-243b53?style=flat-square" />
+  <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-6.x-3178c6?style=flat-square" />
+  <img alt="MCP SDK" src="https://img.shields.io/badge/runtime-official%20MCP%20SDK-243b53?style=flat-square" />
 </p>
 
-ImmunoGraph exposes sequence validation, prediction adapters, evidence processing, structure and chemistry utilities, docking adapters, and research-package export through **one NitroStack MCP application**. An MCP host can discover and call the tools individually. The server contains 46 registered tools across seven modules; the modules are **not** separate MCP servers.
+ImmunoGraph exposes sequence validation, prediction adapters, evidence processing, structure and chemistry utilities, docking adapters, and research-package export through **one standard MCP server**. An MCP host can discover and call the tools individually. The server contains 46 registered tools across seven groups.
 
 > [!IMPORTANT]
 > ImmunoGraph is computational research support. Its synthetic and fixture outputs are demonstrations, not experimental evidence. A candidate shortlist, docking pose, or generated report does not establish vaccine efficacy, safety, or clinical utility. Independent scientific review and experimental validation are required.
 
-**Jump to:** [The problem](#the-research-problem) · [Our solution](#the-mcp-solution) · [End-to-end flow](#end-to-end-flow) · [All 46 tools](#tool-catalog) · [Quick start](#quick-start) · [Provenance](#provenance-and-scientific-use)
+**Jump to:** [The problem](#the-research-problem) · [Our solution](#the-mcp-solution) · [End-to-end flow](#end-to-end-flow) · [All 46 tools](#tool-catalog) · [Quick start](#quick-start) · [Architecture](docs/ARCHITECTURE.md) · [Provenance](#provenance-and-scientific-use)
 
 ## The research problem
 
@@ -53,7 +53,7 @@ Live scientific connectors are optional. The bundled synthetic data and exact-ma
 | Tools | 46 registered operations spanning sequence, evidence, constraints, structure, chemistry, docking, and export |
 | Contracts | Zod input and output schemas with structured success or failure responses |
 | Traceability | Run IDs, timestamps, input hashes, output hashes on success, and source labels for scientific data |
-| Deployment | NitroStack application with configurable MCP transport; see [`.env.example`](.env.example) |
+| Deployment | Official MCP TypeScript SDK over stdio or Streamable HTTP; see [`.env.example`](.env.example) |
 
 Clients can combine these tools in their own research workflow. Each operation remains callable on its own; the MCP server does not require five separate MCP installations.
 
@@ -185,7 +185,7 @@ The workflow/chat utility names are part of the MCP API. The client still makes 
 
 ```mermaid
 flowchart LR
-    Host["MCP host / research client"] --> Server["immunograph-mcp<br/>one NitroStack server"]
+    Host["MCP host / research client"] --> Server["immunograph-mcp<br/>one standard MCP server"]
     Server --> Tools["46 typed tools<br/>7 modules"]
     Tools --> Algorithms["Local algorithms<br/>and profiles"]
     Tools --> Live["Optional live services<br/>and local binaries"]
@@ -197,19 +197,46 @@ The MCP server is registered in [`src/app.module.ts`](src/app.module.ts). Algori
 
 ## Quick start
 
-**Requirements:** Node.js 20.19.x and npm 10.x are the documented project target. Live scientific features additionally need their respective services, model downloads, or local binaries.
+**Requirements:** Node.js 20 or newer. Live scientific features additionally need their respective services, model downloads, or local binaries.
 
 ```bash
 git clone https://github.com/Ajey95/immuno-graph.git
 cd immuno-graph
 npm ci
+npm test
 npm run build
 npm start
 ```
 
-The build compiles the MCP package. On startup, NitroStack registers the 46 tools. `npm run dev` is also available for NitroStack's development workflow. To customize runtime settings, copy [`.env.example`](.env.example) to `.env` and set only the capabilities you intend to use. Keep `data/` alongside the application when deploying; the reference and fixture loaders read from the repository root.
+`npm start` serves MCP over stdio. The server registers all 46 tools with the official MCP TypeScript SDK. Diagnostics go to stderr so stdout remains the protocol channel. `npm run dev` starts the TypeScript source directly. Keep `data/` alongside `dist/` when deploying; reference and fixture loaders resolve it relative to the installed package.
 
-**Connecting an MCP host:** launch the built `dist/index.js` with the repository root as its working directory and choose a transport supported by your NitroStack/host setup. `.env.example` documents the transport settings. This repository does not ship a host-specific client configuration.
+**Local MCP host configuration:** use an absolute path to the built entry point:
+
+```json
+{
+  "mcpServers": {
+    "immunograph": {
+      "command": "node",
+      "args": ["/absolute/path/to/immuno-graph/dist/index.js"]
+    }
+  }
+}
+```
+
+For a local HTTP endpoint, run `npm run start:http` and connect to `http://127.0.0.1:3000/mcp`. `GET /health` is a public health probe. For a remote deployment, set `HOST=0.0.0.0`, a long `IMMUNOGRAPH_API_KEY`, exact `IMMUNOGRAPH_ALLOWED_HOSTS` and `IMMUNOGRAPH_ALLOWED_ORIGINS`, and terminate TLS at the ingress. The supplied [Dockerfile](Dockerfile) runs HTTP; it does not publish a managed endpoint. See [SECURITY.md](SECURITY.md) for deployment guidance.
+
+To try the container locally after setting a long random API key:
+
+```bash
+docker build -t immunograph-mcp:local .
+docker run --rm -p 3000:3000 \
+  -e IMMUNOGRAPH_API_KEY=replace-with-a-long-random-secret \
+  -e IMMUNOGRAPH_ALLOWED_HOSTS=localhost,127.0.0.1 \
+  -e IMMUNOGRAPH_ALLOWED_ORIGINS=localhost,127.0.0.1 \
+  immunograph-mcp:local
+```
+
+The package is prepared for npm but has **not** been published as part of this migration. Build and run from source until a release is made.
 
 ## MCP usage
 
@@ -250,7 +277,9 @@ Live connector paths require external services, model downloads, or installed bi
 ## Repository map
 
 ```text
-src/app.module.ts          NitroStack MCP application and module registration
+src/server.ts              Official MCP tool registration
+src/index.ts               Stdio entry point
+src/http-server.ts          HTTP guard and transport wiring
 src/modules/               MCP tool controllers and connector adapters
 src/lib/algorithms/         Local deterministic algorithms
 src/lib/database/           Data/fixture/profile loaders and validation
@@ -261,7 +290,7 @@ data/fixtures/              Exact-match offline demonstration cases
 
 ## Verification
 
-For the MCP package reviewed on 6 October 2026: `npm ci` and `npm run build` completed, and `npm start` initialized the server with **46 tools** after the full `data/` directory was present. Live connector results and scientific accuracy were not verified by that check.
+Run `npm test`, `npm run build`, `npm audit --audit-level=high`, and `npm pack --dry-run`. The integration tests use real MCP clients to list all 46 tools and call `validate_sequence` over stdio and HTTP. These software checks do not establish live connector performance or scientific accuracy.
 
 ---
 

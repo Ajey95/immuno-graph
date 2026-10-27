@@ -15,8 +15,8 @@ import {
   loadReferenceBundle,
   rankingProfileSchema,
 } from '../../lib/database/mcp.js';
-import { ControllerDecorator, ToolDecorator } from '@nitrostack/core';
-import type { ExecutionContext } from '@nitrostack/core';
+import { ControllerDecorator, ToolDecorator } from '../common/mcp-compat.js';
+import type { ExecutionContext } from '../common/mcp-compat.js';
 import { z } from 'zod';
 
 import type { CapabilityPort } from '../common/capability-port.js';
@@ -55,7 +55,7 @@ const optimizationCandidateSchema = z
     agreement: unitIntervalSchema,
     completeness: unitIntervalSchema,
     category: z.enum(['RECOMMENDED', 'REVIEW', 'REJECTED']),
-    populationCoverage: z.record(unitIntervalSchema),
+    populationCoverage: z.record(z.string(), unitIntervalSchema),
   })
   .strict();
 const geneticOptimizationInput = z
@@ -64,7 +64,7 @@ const geneticOptimizationInput = z
     finalRankingSnapshotHash: sha256Schema,
     candidates: z.array(optimizationCandidateSchema).min(1),
     populationIds: z.array(identifierSchema).min(1),
-    populationWeights: z.record(z.number().finite().nonnegative()).optional(),
+    populationWeights: z.record(z.string(), z.number().finite().nonnegative()).optional(),
     maximumGenerations: z.number().int().positive(),
     populationSize: z.number().int().positive(),
     maximumConstructSize: z.number().int().positive(),

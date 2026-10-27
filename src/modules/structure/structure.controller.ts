@@ -1,6 +1,6 @@
 import { canonicalJsonSha256 } from '../../lib/algorithms/index.js';
-import { ControllerDecorator, ToolDecorator as Tool } from '@nitrostack/core';
-import type { ExecutionContext } from '@nitrostack/core';
+import { ControllerDecorator, ToolDecorator as Tool } from '../common/mcp-compat.js';
+import type { ExecutionContext } from '../common/mcp-compat.js';
 import { z } from 'zod';
 
 import {
@@ -156,7 +156,7 @@ const confidenceInput = z
     runId: identifierSchema,
     structureId: identifierSchema,
     sourceStatus,
-    confidenceMetrics: z.record(z.number().finite()).optional(),
+    confidenceMetrics: z.record(z.string(), z.number().finite()).optional(),
   })
   .strict();
 const confidenceData = z

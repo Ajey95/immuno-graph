@@ -3,6 +3,8 @@ dist/
 logs/
 .env
 .tmp-*
+*.tgz
+*.log
 
 .agents/
 .antigravity/

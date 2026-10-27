@@ -26,7 +26,7 @@ export const profileMetadataSchema = z
 
 export const runConfigurationSnapshotSchema = z
   .object({
-    profiles: z.record(profileMetadataSchema).superRefine((profiles, context) => {
+    profiles: z.record(z.string(), profileMetadataSchema).superRefine((profiles, context) => {
       for (const requiredProfile of ['biologicalConstraints', 'ranking']) {
         if (profiles[requiredProfile] === undefined) {
           context.addIssue({

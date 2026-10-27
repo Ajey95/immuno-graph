@@ -1,4 +1,4 @@
-import type { ToolOptions } from '@nitrostack/core';
+import type { ToolOptions } from './common/mcp-compat.js';
 import { z } from 'zod';
 
 import {
@@ -15,7 +15,7 @@ import {
 const positiveInteger = z.number().int().positive();
 const nonnegativeInteger = z.number().int().nonnegative();
 const nonemptyStrings = z.array(identifierSchema).min(1);
-const jsonRecord = z.record(z.unknown());
+const jsonRecord = z.record(z.string(), z.unknown());
 type FallbackPolicy = z.infer<typeof fallbackPolicySchema>;
 type PredictorInput = {
   runId: string;
@@ -167,23 +167,14 @@ export function defineContract<TInput extends z.ZodTypeAny, TData extends z.ZodT
 }
 
 export function toolOptions(contract: ToolContract, category: string): ToolOptions {
-  // Public MCP clients such as Claude can reject tools marked as task-support
-  // "required" unless their host provides NitroStack task augmentation. The
-  // tools are still fully validated and idempotent; expose them as optional so
-  // external clients can call them directly during deployed MCP demos.
-  const taskSupport = contract.taskSupport === 'required' ? 'optional' : contract.taskSupport;
   return {
     name: contract.name,
     description: contract.description,
     inputSchema: contract.inputSchema,
-    // NitroStack v1.0.13 serializes normal tool handler returns as text content.
-    // The MCP SDK rejects text-only results when a tool advertises outputSchema,
-    // expecting structuredContent instead. We still validate every output inside
-    // executeTool; omitting advertised outputSchema keeps HTTP clients compatible.
+    // executeTool validates each result; server.ts returns both MCP text and structured content.
     examples: { request: contract.exampleInput, response: failureExample(contract.name) },
     metadata: { category, tags: ['immunograph', 'deterministic', 'mvp-v1'] },
     annotations: { readOnlyHint: true, idempotentHint: true },
-    taskSupport: taskSupport ?? 'forbidden',
   };
 }
 
@@ -689,7 +680,7 @@ export const rankCandidatesContract = defineContract({
       candidates: z.array(
         z.object({
           candidateId: identifierSchema,
-          componentScores: z.record(unitIntervalSchema),
+          componentScores: z.record(z.string(), unitIntervalSchema),
           scoreBeforePenalty: unitIntervalSchema,
           missingEvidencePenalty: z.number().nonnegative(),
           softWarningPenalty: z.number().nonnegative(),
@@ -702,7 +693,7 @@ export const rankCandidatesContract = defineContract({
       phase: z.literal('FINAL'),
       candidates: z.array(
         rankedCandidateInputSchema.extend({
-          componentScores: z.record(unitIntervalSchema),
+          componentScores: z.record(z.string(), unitIntervalSchema),
           scoreBeforePenalty: unitIntervalSchema,
           missingEvidencePenalty: z.number().nonnegative(),
           softWarningPenalty: z.number().nonnegative(),
@@ -769,12 +760,12 @@ export const optimizeCoverageContract = defineContract({
               agreement: unitIntervalSchema,
               completeness: unitIntervalSchema,
               category: z.enum(['RECOMMENDED', 'REVIEW', 'REJECTED']),
-              populationCoverage: z.record(unitIntervalSchema),
+              populationCoverage: z.record(z.string(), unitIntervalSchema),
             })
             .strict(),
         )
         .optional(),
-      populationWeights: z.record(z.number().finite().nonnegative()).optional(),
+      populationWeights: z.record(z.string(), z.number().finite().nonnegative()).optional(),
       linker: identifierSchema.optional(),
     })
     .strict()
@@ -791,7 +782,7 @@ export const optimizeCoverageContract = defineContract({
     ),
     selectedCandidateIds: z.array(identifierSchema),
     finalCoverage: unitIntervalSchema,
-    coverageByPopulation: z.record(unitIntervalSchema).optional(),
+    coverageByPopulation: z.record(z.string(), unitIntervalSchema).optional(),
     constructSequence: z.string().optional(),
     averageCandidateScore: unitIntervalSchema.optional(),
     redundancyPenalty: unitIntervalSchema.optional(),
@@ -1124,7 +1115,7 @@ export const explainCandidateContract = defineContract({
       category: z.enum(['RECOMMENDED', 'REVIEW', 'REJECTED']),
       trackRank: positiveInteger,
       finalScore: unitIntervalSchema,
-      componentScores: z.record(unitIntervalSchema),
+      componentScores: z.record(z.string(), unitIntervalSchema),
       ruleOutcomes: z.array(
         z.object({
           ruleId: identifierSchema,
@@ -1142,7 +1133,7 @@ export const explainCandidateContract = defineContract({
         .nullable(),
       warningRuleIds: z.array(identifierSchema),
       failedRuleIds: z.array(identifierSchema),
-      provenanceSummary: z.record(nonnegativeInteger),
+      provenanceSummary: z.record(z.string(), nonnegativeInteger),
       disclaimer: identifierSchema,
     }),
     llmParaphrase: z.string().nullable(),
@@ -1226,7 +1217,7 @@ const workflowPlanEdgeSchema = z.object({
 export const describeAgenticWorkflowContract = defineContract({
   name: 'describe_agentic_workflow',
   description:
-    'Describe the single NitroStack MCP app internal agent graph, tool permissions, approvals, and final package contract.',
+    'Describe the single standard MCP server internal agent graph, tool permissions, approvals, and final package contract.',
   inputSchema: z
     .object({
       runId: identifierSchema,
@@ -1236,7 +1227,7 @@ export const describeAgenticWorkflowContract = defineContract({
     .strict(),
   dataSchema: z
     .object({
-      deploymentBoundary: z.literal('ONE_NITROSTACK_MCP_APP'),
+      deploymentBoundary: z.literal('ONE_STANDARD_MCP_SERVER'),
       manifestVersion: identifierSchema,
       planVersion: identifierSchema,
       runId: identifierSchema,
@@ -1387,7 +1378,7 @@ const agentStepSchema = z
 export const runAgenticWorkflowContract = defineContract({
   name: 'run_agentic_workflow',
   description:
-    'Run the strict PRD v1.1 LangGraph bounded-agent workflow inside the single NitroStack MCP app.',
+    'Run the strict PRD v1.1 LangGraph bounded-agent workflow inside the single standard MCP server.',
   inputSchema: z
     .object({
       runId: identifierSchema,

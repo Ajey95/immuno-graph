@@ -7,8 +7,8 @@ import {
   validateFasta,
 } from '../../lib/algorithms/index.js';
 import { loadReferenceBundle } from '../../lib/database/mcp.js';
-import { ControllerDecorator, ToolDecorator } from '@nitrostack/core';
-import type { ExecutionContext } from '@nitrostack/core';
+import { ControllerDecorator, ToolDecorator } from '../common/mcp-compat.js';
+import type { ExecutionContext } from '../common/mcp-compat.js';
 import { createHash } from 'node:crypto';
 import type { z } from 'zod';
 
@@ -233,6 +233,3 @@ function withDerivedProteinRef<T>(input: T): T {
     proteinRef: createHash('sha256').update(input.sequence).digest('hex'),
   };
 }
-
-// Keep NitroStack's default module composition free of constructor dependencies.
-Reflect.defineMetadata('design:paramtypes', [], PredictionController);

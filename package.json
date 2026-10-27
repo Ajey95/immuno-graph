@@ -1,34 +1,51 @@
 {
-  "name": "nitro-mcp",
-  "version": "1.0.0",
-  "private": true,
+  "name": "immunograph-mcp",
+  "version": "0.2.0",
   "type": "module",
-  "description": "ImmunoGraph NitroCloud MCP server",
+  "description": "Standard MCP server for provenance-aware computational epitope research tools",
+  "license": "MIT",
+  "bin": {
+    "immunograph-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "data",
+    "docs",
+    ".env.example",
+    "README.md",
+    "LICENSE",
+    "SECURITY.md",
+    "CHANGELOG.md"
+  ],
   "scripts": {
-    "dev": "nitrostack-cli dev",
-    "build": "nitrostack-cli build",
+    "dev": "tsx src/index.ts",
+    "build": "node scripts/build.mjs",
     "start": "node dist/index.js",
-    "start:prod": "node dist/index.js",
-    "upgrade": "nitrostack-cli upgrade",
-    "install:all": "nitrostack-cli install",
-    "widget": "npm --prefix src/widgets"
+    "start:http": "node dist/http.js",
+    "test": "node --import tsx --test tests/mcp.test.ts",
+    "check": "npm test && npm run build && npm audit --audit-level=high && npm pack --dry-run --silent",
+    "prepublishOnly": "npm test && npm run build"
   },
   "dependencies": {
-    "dotenv": "^16.3.1",
     "@langchain/core": "1.2.3",
     "@langchain/langgraph": "1.4.8",
-    "@nitrostack/core": "1.0.13",
-    "@modelcontextprotocol/ext-apps": ">=0.1.0",
-    "reflect-metadata": "0.2.2",
-    "zod": "^3.22.4"
+    "@modelcontextprotocol/node": "^2.1.2",
+    "@modelcontextprotocol/server": "^2.4.0",
+    "dotenv": "^16.3.1",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@nitrostack/cli": "1.0.14",
+    "@modelcontextprotocol/client": "^2.4.0",
     "@types/node": "^22.10.0",
-    "typescript": "^5.3.3"
+    "tsx": "^4.23.12",
+    "typescript": "^6.0.2"
   },
   "author": "Ajey95",
-  "nitrostack": {
-    "skillsVersion": "1.0.0"
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Ajey95/immuno-graph.git"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }
