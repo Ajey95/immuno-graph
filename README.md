@@ -193,7 +193,7 @@ flowchart LR
     Tools --> Export["Reports, CSV exports<br/>and research ZIP"]
 ```
 
-The MCP server is registered in [`src/app.module.ts`](src/app.module.ts). Algorithms and data loaders are under `src/lib/`; tool handlers and connector adapters are under `src/modules/`. `data/` contains the reference manifests, profiles, schemas, and offline fixtures needed by the server. Run the application from the repository root so those files resolve correctly.
+The MCP server is registered in [`src/server.ts`](src/server.ts). Algorithms and data loaders are under `src/lib/`; tool handlers and connector adapters are under `src/modules/`. `data/` contains the reference manifests, profiles, schemas, and offline fixtures needed by the server. Run the application from the repository root so those files resolve correctly.
 
 ## Quick start
 
@@ -205,6 +205,7 @@ cd immuno-graph
 npm ci
 npm test
 npm run build
+npm run test:all-tools
 npm start
 ```
 
@@ -252,6 +253,10 @@ Tools are independently callable. For example, an MCP client can call `validate_
 The response contains a normalized sequence, its length and SHA-256 hash, or a structured validation error. `generate_candidate_peptides` can then create peptide windows. A research client must explicitly call the prediction, evidence, ranking, and export tools it needs and pass the resulting evidence between them.
 
 For a standalone offline demonstration, the repository includes exact-match fixtures in `data/fixtures/` and a separate `predict_synthetic_binding` tool. Fixture-backed prediction only succeeds when the protein reference **and** method, allele, peptide-length, and parameter selectors match an approved fixture. An arbitrary new sequence is not automatically given a fixture prediction.
+
+`npm run test:all-tools` calls every documented example through a real stdio MCP client. It verifies all 46 local deterministic or fixture paths. Report and export tools accept caller-supplied snapshots because the server does not keep run state; their examples show the required input shapes. Missing snapshots return a structured dependency error unless the host installs a capability provider. This test does not validate live connector availability or scientific accuracy.
+
+`generate_report` supports JSON and CSV. PDF is not currently emitted by the server.
 
 ## Optional live connectors
 

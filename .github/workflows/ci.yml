@@ -24,6 +24,7 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+      - run: npm run test:all-tools
       - run: npm audit --audit-level=high
       - run: npm pack --dry-run
 

@@ -94,12 +94,77 @@ export class ReportController {
 
   @ToolDecorator(toolOptions(exportCandidatesContract, CATEGORY))
   exportCandidates(input: unknown, context: ExecutionContext) {
-    return this.invokeCapability(exportCandidatesContract, input, context);
+    return executeTool({
+      toolName: exportCandidatesContract.name,
+      input,
+      inputSchema: exportCandidatesContract.inputSchema,
+      dataSchema: exportCandidatesContract.dataSchema,
+      context,
+      operation: async (validated) => {
+        if (validated.candidateSnapshot === undefined) {
+          return this.capabilities.invoke(exportCandidatesContract.name, validated) as Promise<
+            z.infer<typeof exportCandidatesContract.dataSchema>
+          >;
+        }
+        const rows = validated.candidateSnapshot.filter((candidate) =>
+          validated.categories.includes(candidate.category),
+        );
+        const contents =
+          validated.format === 'JSON'
+            ? JSON.stringify(
+                { schemaVersion: 'immunograph-candidates.v1', runId: validated.runId, candidates: rows },
+                null,
+                2,
+              )
+            : `candidateId,category,peptide,rawScore,normalizedScore,sourceStatus\n${rows
+                .map((row) =>
+                  [
+                    row.candidateId,
+                    row.category,
+                    row.peptide,
+                    row.rawScore,
+                    row.normalizedScore,
+                    row.sourceStatus,
+                  ]
+                    .map(csvCell)
+                    .join(','),
+                )
+                .join('\n')}\n`;
+        return inlineArtifact(
+          `${validated.runId}-candidates-${validated.format.toLowerCase()}`,
+          validated.format === 'JSON' ? 'application/json' : 'text/csv',
+          `mcp://exports/${validated.runId}/candidates.${validated.format.toLowerCase()}`,
+          contents,
+        );
+      },
+    });
   }
 
   @ToolDecorator(toolOptions(visualizeResultsContract, CATEGORY))
   visualizeResults(input: unknown, context: ExecutionContext) {
-    return this.invokeCapability(visualizeResultsContract, input, context);
+    return executeTool({
+      toolName: visualizeResultsContract.name,
+      input,
+      inputSchema: visualizeResultsContract.inputSchema,
+      dataSchema: visualizeResultsContract.dataSchema,
+      context,
+      operation: async (validated) => {
+        if (validated.visualizationSnapshot === undefined) {
+          return this.capabilities.invoke(visualizeResultsContract.name, validated) as Promise<
+            z.infer<typeof visualizeResultsContract.dataSchema>
+          >;
+        }
+        return {
+          visualizationType: validated.visualizationType,
+          viewModel: {
+            runId: validated.runId,
+            items: validated.visualizationSnapshot.items,
+            itemCount: validated.visualizationSnapshot.items.length,
+            provenance: validated.visualizationSnapshot.provenance ?? {},
+          },
+        };
+      },
+    });
   }
 
   @ToolDecorator(toolOptions(explainCandidateContract, CATEGORY))
@@ -149,7 +214,35 @@ export class ReportController {
 
   @ToolDecorator(toolOptions(exportTraceContract, CATEGORY))
   exportWorkflowTrace(input: unknown, context: ExecutionContext) {
-    return this.invokeCapability(exportTraceContract, input, context);
+    return executeTool({
+      toolName: exportTraceContract.name,
+      input,
+      inputSchema: exportTraceContract.inputSchema,
+      dataSchema: exportTraceContract.dataSchema,
+      context,
+      operation: async (validated) => {
+        if (validated.traceEvents === undefined) {
+          return this.capabilities.invoke(exportTraceContract.name, validated) as Promise<
+            z.infer<typeof exportTraceContract.dataSchema>
+          >;
+        }
+        const contents = JSON.stringify({
+          schemaVersion: 'immunograph-workflow-trace.v1',
+          runId: validated.runId,
+          redactionProfile: validated.redactionProfile,
+          events: validated.traceEvents,
+        }, null, 2);
+        return {
+          artifact: inlineArtifact(
+            `${validated.runId}-workflow-trace`,
+            'application/json',
+            `mcp://exports/${validated.runId}/workflow-trace.json`,
+            contents,
+          ),
+          eventCount: validated.traceEvents.length,
+        };
+      },
+    });
   }
 
   @ToolDecorator(toolOptions(describeAgenticWorkflowContract, CATEGORY))
@@ -315,10 +408,27 @@ function reportCsv(rows: Array<Record<string, unknown>>, disclaimer: string): st
     'sourceStatus',
     'scientificUse',
   ];
-  const quote = (value: unknown) => `"${String(value ?? '').replaceAll('"', '""')}"`;
-  return `# ${disclaimer}\n${columns.join(',')}\n${rows
-    .map((row) => columns.map((column) => quote(row[column])).join(','))
+  return `# ${disclaimer.replaceAll(/[\r\n]/g, ' ')}\n${columns.join(',')}\n${rows
+    .map((row) => columns.map((column) => csvCell(row[column])).join(','))
     .join('\n')}\n`;
+}
+
+function csvCell(value: unknown): string {
+  const raw = String(value ?? '');
+  const safe = typeof value === 'string' && /^[=+@\t\r]/.test(raw) ? `'${raw}` : raw;
+  return `"${safe.replaceAll('"', '""')}"`;
+}
+
+function inlineArtifact(artifactId: string, mediaType: string, reference: string, contents: string) {
+  const bytes = Buffer.from(contents, 'utf8');
+  return {
+    artifactId,
+    mediaType,
+    sha256: createHash('sha256').update(bytes).digest('hex'),
+    byteLength: bytes.byteLength,
+    reference,
+    contentBase64: bytes.toString('base64'),
+  };
 }
 
 function createMcpResearchPackageZip(input: {

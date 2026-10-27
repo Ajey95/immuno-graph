@@ -25,7 +25,8 @@
     "start": "node dist/index.js",
     "start:http": "node dist/http.js",
     "test": "node --import tsx --test tests/mcp.test.ts",
-    "check": "npm test && npm run build && npm audit --audit-level=high && npm pack --dry-run --silent",
+    "test:all-tools": "node --import tsx scripts/audit-tools.mts",
+    "check": "npm test && npm run build && npm run test:all-tools && npm audit --audit-level=high && npm pack --dry-run --silent",
     "prepublishOnly": "npm test && npm run build"
   },
   "dependencies": {

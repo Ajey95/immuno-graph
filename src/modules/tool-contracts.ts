@@ -266,12 +266,11 @@ export const predictMhciContract = defineContract({
   dataSchema: predictionDataSchema,
   exampleInput: {
     runId: 'run-1',
-    proteinRef: 'protein-1',
-    sequence: 'ACDEFGHIKLMNPQRST',
+    proteinRef: 'influenza',
     alleles: ['HLA-A*02:01'],
-    peptideLengths: [9],
+    peptideLengths: [9, 10],
     methods: ['iedb-recommended'],
-    fallbackPolicy: 'LIVE_THEN_CACHE_THEN_FIXTURE' as const,
+    fallbackPolicy: 'FIXTURE_ONLY' as const,
   },
   taskSupport: 'required' as const,
 });
@@ -282,12 +281,11 @@ export const predictMhciiContract = defineContract({
   dataSchema: predictionDataSchema,
   exampleInput: {
     runId: 'run-1',
-    proteinRef: 'protein-1',
-    sequence: 'ACDEFGHIKLMNPQRST',
-    alleles: ['HLA-DRB1*01:01'],
+    proteinRef: 'influenza',
+    alleles: ['HLA-DRB1*04:01'],
     peptideLengths: [15],
-    methods: ['iedb-mhcii'],
-    fallbackPolicy: 'LIVE_THEN_CACHE_THEN_FIXTURE' as const,
+    methods: ['iedb-recommended'],
+    fallbackPolicy: 'FIXTURE_ONLY' as const,
   },
   taskSupport: 'required' as const,
 });
@@ -328,7 +326,7 @@ export const predictBcellContract = defineContract({
   }),
   exampleInput: {
     runId: 'run-1',
-    proteinRef: 'protein-1',
+    proteinRef: 'influenza',
     methods: ['graphbepi'],
     parameters: {},
     fallbackPolicy: 'FIXTURE_ONLY' as const,
@@ -563,10 +561,10 @@ export const populationCoverageContract = defineContract({
   }),
   exampleInput: {
     runId: 'run-1',
-    associations: [{ candidateId: 'candidate-1', allele: 'HLA-A*02:01' }],
-    populationIds: ['world'],
-    classMode: 'CLASS_I' as const,
-    fallbackPolicy: 'LIVE_THEN_CACHE_THEN_FIXTURE' as const,
+    associations: [{ candidateId: 'influenza-mhci-candidate-1', allele: 'HLA-A*02:01' }],
+    populationIds: ['synthetic-population-alpha', 'synthetic-population-beta'],
+    classMode: 'COMBINED' as const,
+    fallbackPolicy: 'FIXTURE_ONLY' as const,
   },
   taskSupport: 'required' as const,
 });
@@ -817,9 +815,9 @@ export const optimizeCoverageContract = defineContract({
   }),
   exampleInput: {
     runId: 'run-1',
-    eligibleCandidateIds: ['candidate-1'],
+    eligibleCandidateIds: ['influenza-mhcii-candidate-1', 'influenza-mhci-candidate-1'],
     finalRankingSnapshotHash: 'a'.repeat(64),
-    populationIds: ['world'],
+    populationIds: ['synthetic-population-alpha', 'synthetic-population-beta'],
     targetCoverage: 0.8,
     method: 'iedb-population-coverage',
   },
@@ -1036,7 +1034,7 @@ export const generateReportContract = defineContract({
     .object({
       runId: identifierSchema,
       templateVersion: identifierSchema,
-      outputFormats: z.array(z.enum(['JSON', 'CSV', 'PDF'])).min(1),
+      outputFormats: z.array(z.enum(['JSON', 'CSV'])).min(1),
       idempotencyKey: identifierSchema,
       reportSnapshot: z
         .object({
@@ -1060,6 +1058,13 @@ export const generateReportContract = defineContract({
     templateVersion: 'mvp-v1.0',
     outputFormats: ['JSON' as const, 'CSV' as const],
     idempotencyKey: 'report-run-1',
+    reportSnapshot: {
+      executionMode: 'FIXTURE' as const,
+      runQuality: 'DEMONSTRATION_ONLY',
+      scientificUse: false,
+      disclaimer: 'Synthetic demonstration only.',
+      candidates: [{ candidateId: 'influenza-mhci-candidate-1', category: 'RECOMMENDED' }],
+    },
   },
   taskSupport: 'required' as const,
 });
@@ -1072,6 +1077,14 @@ export const exportCandidatesContract = defineContract({
       categories: z.array(z.enum(['RECOMMENDED', 'REVIEW', 'REJECTED'])).min(1),
       format: z.enum(['JSON', 'CSV']),
       idempotencyKey: identifierSchema,
+      candidateSnapshot: z.array(z.object({
+        candidateId: identifierSchema,
+        category: z.enum(['RECOMMENDED', 'REVIEW', 'REJECTED']),
+        peptide: identifierSchema,
+        rawScore: z.number().finite(),
+        normalizedScore: unitIntervalSchema,
+        sourceStatus: z.enum(['LIVE', 'CACHED', 'SYNTHETIC', 'FIXTURE']),
+      }).strict()).optional(),
     })
     .strict(),
   dataSchema: artifactSchema,
@@ -1080,6 +1093,14 @@ export const exportCandidatesContract = defineContract({
     categories: ['RECOMMENDED' as const],
     format: 'CSV' as const,
     idempotencyKey: 'export-run-1',
+    candidateSnapshot: [{
+      candidateId: 'influenza-mhci-candidate-1',
+      category: 'RECOMMENDED' as const,
+      peptide: 'YWVTSRQPN',
+      rawScore: 0.77,
+      normalizedScore: 0.8,
+      sourceStatus: 'FIXTURE' as const,
+    }],
   },
 });
 export const visualizeResultsContract = defineContract({
@@ -1097,10 +1118,21 @@ export const visualizeResultsContract = defineContract({
         'WORKFLOW_GRAPH',
         'POPULATION_COVERAGE',
       ]),
+      visualizationSnapshot: z.object({
+        items: z.array(jsonRecord),
+        provenance: jsonRecord.optional(),
+      }).strict().optional(),
     })
     .strict(),
   dataSchema: z.object({ visualizationType: identifierSchema, viewModel: jsonRecord }),
-  exampleInput: { runId: 'run-1', visualizationType: 'SEQUENCE_MAP' as const },
+  exampleInput: {
+    runId: 'run-1',
+    visualizationType: 'SEQUENCE_MAP' as const,
+    visualizationSnapshot: {
+      items: [{ candidateId: 'influenza-mhci-candidate-1', start: 1, end: 9, sourceStatus: 'FIXTURE' }],
+      provenance: { scientificUse: false, sourceKind: 'SYNTHETIC' },
+    },
+  },
 });
 
 export const explainCandidateContract = defineContract({
@@ -1159,10 +1191,19 @@ export const exportTraceContract = defineContract({
       runId: identifierSchema,
       redactionProfile: identifierSchema,
       idempotencyKey: identifierSchema,
+      traceEvents: z.array(z.object({
+        eventId: identifierSchema,
+        stage: identifierSchema,
+        status: z.enum(['STARTED', 'COMPLETED', 'FAILED', 'SKIPPED']),
+        at: z.string().datetime(),
+      }).strict()).optional(),
     })
     .strict(),
   dataSchema: z.object({ artifact: artifactSchema, eventCount: nonnegativeInteger }),
-  exampleInput: { runId: 'run-1', redactionProfile: 'mvp-safe-v1', idempotencyKey: 'trace-run-1' },
+  exampleInput: {
+    runId: 'run-1', redactionProfile: 'mvp-safe-v1', idempotencyKey: 'trace-run-1',
+    traceEvents: [{ eventId: 'event-1', stage: 'prediction', status: 'COMPLETED' as const, at: '2026-01-01T00:00:00.000Z' }],
+  },
 });
 
 const toolGroupNameSchema = z.enum([
