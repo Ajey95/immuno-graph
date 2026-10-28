@@ -31,6 +31,10 @@ const rawMcpEnvironmentSchema = z.object({
     .int()
     .positive()
     .default(10 * 1024 * 1024),
+  /** Enable IEDB's next-generation BepiPred-3.0 sequence prediction API. */
+  IEDB_BCELL_ENABLED: z.enum(['true', 'false']).transform((v) => v === 'true').default(false),
+  IEDB_BCELL_TIMEOUT_MS: z.coerce.number().int().positive().default(300_000),
+  IEDB_BCELL_MAX_RESPONSE_BYTES: z.coerce.number().int().positive().default(10 * 1024 * 1024),
   /** Override the IEDB MHC-I endpoint (leave unset to use the official URL). */
   IEDB_MHCI_URL: z.string().url().optional(),
   /** Override the IEDB MHC-II endpoint (leave unset to use the official URL). */

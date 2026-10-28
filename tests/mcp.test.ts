@@ -67,6 +67,31 @@ test('standard MCP client discovers and calls the preserved scientific tools', a
     const description = workflow.structuredContent as { ok: boolean; data: { deploymentBoundary: string } };
     assert.equal(description.data.deploymentBoundary, 'ONE_STANDARD_MCP_SERVER');
 
+    const box = await client.callTool({
+      name: 'validate_docking_box',
+      arguments: {
+        runId: 'test-run', dockingBoxId: 'box-1',
+        center: { x: 1, y: 2, z: 3 }, size: { x: 10, y: 12, z: 14 },
+      },
+    });
+    assert.equal(box.isError, false);
+    const boxData = box.structuredContent as { ok: boolean; data: { valid: boolean; volume: number; provenance: { status: string } } };
+    assert.equal(boxData.ok, true);
+    assert.equal(boxData.data.valid, true);
+    assert.equal(boxData.data.volume, 1680);
+    assert.equal(boxData.data.provenance.status, 'LIVE');
+
+    const mixedBcell = await client.callTool({
+      name: 'predict_bcell',
+      arguments: {
+        runId: 'test-run', proteinRef: 'sample', sequence: 'MKWVTFISLLFLFSSAYS',
+        methods: ['bepipred-3.0', 'parker'], parameters: {}, fallbackPolicy: 'LIVE_ONLY',
+      },
+    });
+    assert.equal(mixedBcell.isError, true);
+    const mixedBcellData = mixedBcell.structuredContent as { ok: boolean; error: { code: string } };
+    assert.equal(mixedBcellData.error.code, 'BEPIPRED_SINGLE_METHOD_REQUIRED');
+
     const invalid = await client.callTool({ name: 'validate_sequence', arguments: { fasta: '' } });
     assert.equal(invalid.isError, true);
   } finally {

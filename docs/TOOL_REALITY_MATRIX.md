@@ -1,6 +1,6 @@
 # ImmunoGraph MCP: 46-tool execution reality
 
-Updated 2026-10-28. `npm run test:all-tools` calls all 46 examples through a standard MCP client. That proves registration and example execution, **not** 46 independent live scientific integrations. A real deterministic transform processes caller-supplied data; a live provider fetches or computes with the configured scientific runtime. Inspect each result's provenance and supplied input before drawing scientific conclusions.
+Updated 2026-10-29. `npm run test:all-tools` calls all 46 examples through a standard MCP client. That proves registration and example execution, **not** 46 independent live scientific integrations. A real deterministic transform processes caller-supplied data; a live provider fetches or computes with the configured scientific runtime. Inspect each result's provenance and supplied input before drawing scientific conclusions.
 
 | Tool | Actual operation | Current verification |
 | --- | --- | --- |
@@ -8,7 +8,7 @@ Updated 2026-10-28. `npm run test:all-tools` calls all 46 examples through a sta
 | `generate_candidate_peptides` | Enumerate actual sequence windows | MCP test, real input |
 | `predict_mhci` | IEDB live MHC-I predictor | Live MCP call verified |
 | `predict_mhcii` | IEDB live MHC-II predictor | Live MCP call verified |
-| `predict_bcell` | Parker sequence hydrophilicity; GraphBepi branch is fixture only | Parker live computation verified; GraphBepi pending |
+| `predict_bcell` | IEDB BepiPred-3.0 probability, Parker sequence hydrophilicity; GraphBepi branch is fixture only | BepiPred live MCP call and Parker computation verified; GraphBepi pending |
 | `predict_synthetic_binding` | Deliberately synthetic binding example | Demo only by contract |
 | `normalize_scores` | Apply supplied normalization profile | MCP example verified |
 | `compute_consensus` | Weighted consensus over supplied observations | MCP example verified |
@@ -37,7 +37,7 @@ Updated 2026-10-28. `npm run test:all-tools` calls all 46 examples through a sta
 | `calculate_molecular_descriptors` | RDKit descriptors when selected and enabled | Live MCP call verified; explicit failure if RDKit requested but unavailable |
 | `prepare_ligand` | RDKit 3D conformer and Meeko PDBQT | Live MCP exported SDF/PDBQT verified |
 | `prepare_receptor` | Meeko receptor PDBQT from PDB coordinates | Live MCP exported PDBQT verified |
-| `validate_docking_box` | Validate supplied box geometry | MCP example verified |
+| `validate_docking_box` | Validate supplied box geometry and calculate volume | Real-input MCP call verified with live-computation provenance |
 | `run_docking` | AutoDock Vina scoring and poses | Live MCP docking and file exports verified |
 | `cluster_docking_poses` | Coordinate RMSD clustering | Live MCP call verified |
 | `extract_interactions` | PLIP contacts on docked complex PDB | Live MCP call verified |
@@ -53,9 +53,9 @@ Updated 2026-10-28. `npm run test:all-tools` calls all 46 examples through a sta
 
 ## What still breaks first
 
-1. GraphBepi requires an independently installed model/runtime and a validated output adapter. Its public repository documents Linux, historical Python/Torch versions, pretrained model downloads, and PDB/FASTA prediction commands; it is not bundled here. The Parker path is a hydrophilicity proxy, not an equivalent B-cell model.
+1. GraphBepi requires an independently installed model/runtime and a validated output adapter. Its public repository documents Linux, historical Python/Torch versions, pretrained model downloads, and PDB/FASTA prediction commands; it is not bundled here. `predict_bcell` now has live IEDB BepiPred-3.0 inference, while Parker remains a hydrophilicity proxy.
 2. IEDB next-generation population coverage has a live MCP call with the World AFND dataset. The optional standalone and custom-service paths have not been live verified. Do not relabel the exact fixture or synthetic calculator as population evidence.
 3. Most ranking, confidence, constraint, and export tools consume supplied data. Their code executes real calculations/serialization, but the scientific quality of results follows the provenance and quality of those inputs.
 4. A docking pose, contact, epitope prediction, or population estimate is computational evidence and needs independent scientific review and experimental validation.
 
-Run `scripts/verify-live-workflow.mts`, `scripts/verify-live-chemistry.mts`, and `scripts/verify-live-population.mts` for the newly added live call proofs. See [LIVE_WORKFLOWS.md](LIVE_WORKFLOWS.md) for the earlier PDB, PubChem, IEDB, Vina, PLIP, FreeSASA, fpocket, and Mol* proof chain.
+Run `scripts/verify-live-workflow.mts`, `scripts/verify-live-chemistry.mts`, `scripts/verify-live-population.mts`, and `scripts/verify-live-bcell.mts` for the newly added live call proofs. See [LIVE_WORKFLOWS.md](LIVE_WORKFLOWS.md) for the earlier PDB, PubChem, IEDB, Vina, PLIP, FreeSASA, fpocket, and Mol* proof chain.

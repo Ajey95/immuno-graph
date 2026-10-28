@@ -14,6 +14,8 @@ import type { z } from 'zod';
 
 import type { CapabilityPort } from '../common/capability-port.js';
 import { buildDefaultCapabilityPort } from '../common/default-capability-port.js';
+import { predictIedbBepipred } from '../common/iedb-bcell-capability-port.js';
+import { loadMcpEnvironment } from '../config/environment.js';
 import { executeTool, ToolExecutionError } from '../common/executor.js';
 import {
   generatePeptidesContract,
@@ -122,6 +124,30 @@ export class PredictionController {
       dataSchema: predictBcellContract.dataSchema,
       context,
       operation: async (validated) => {
+        if (validated.methods.length !== 1 && validated.methods.some((method) => method.toLowerCase() === 'bepipred-3.0')) {
+          throw new ToolExecutionError('BEPIPRED_SINGLE_METHOD_REQUIRED', 'VALIDATION', 'Run BepiPred as a separate prediction call; mixed methods are not supported.');
+        }
+        if (validated.methods.length === 1 && validated.methods[0]?.toLowerCase() === 'bepipred-3.0') {
+          if (validated.fallbackPolicy === 'FIXTURE_ONLY') {
+            throw new ToolExecutionError('BEPIPRED_LIVE_POLICY_REQUIRED', 'VALIDATION', 'BepiPred requires a live-permitting fallback policy.');
+          }
+          if (!validated.sequence) {
+            throw new ToolExecutionError('BEPIPRED_SEQUENCE_REQUIRED', 'VALIDATION', 'BepiPred requires an actual protein sequence.');
+          }
+          const environment = loadMcpEnvironment();
+          if (!environment.IEDB_BCELL_ENABLED) {
+            throw new ToolExecutionError('IEDB_BCELL_NOT_CONFIGURED', 'CONNECTOR', 'Set IEDB_BCELL_ENABLED=true for live BepiPred predictions.');
+          }
+          return predictIedbBepipred({
+            runId: validated.runId,
+            proteinRef: validated.proteinRef,
+            sequence: validated.sequence,
+            parameters: validated.parameters,
+          }, {
+            timeoutMs: environment.IEDB_BCELL_TIMEOUT_MS,
+            maximumResponseBytes: environment.IEDB_BCELL_MAX_RESPONSE_BYTES,
+          });
+        }
         if (validated.methods.length === 1 && validated.methods[0]?.toLowerCase() === 'parker') {
           if (validated.fallbackPolicy === 'FIXTURE_ONLY') {
             throw new ToolExecutionError('PARKER_LIVE_POLICY_REQUIRED', 'VALIDATION', 'Parker computation requires a live-permitting fallback policy.');

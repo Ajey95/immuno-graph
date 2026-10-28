@@ -301,7 +301,7 @@ export class DockingController {
           valid: volume > 0 && volume <= 27_000,
           volume,
           warnings: volume > 27_000 ? ['docking-box-too-large'] : [],
-          provenance: provenance('docking-box-validator', 'validate_docking_box', 'FIXTURE', value),
+          provenance: provenance('docking-box-validator', 'validate_docking_box', 'LIVE', value),
         };
       },
     });

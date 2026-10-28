@@ -291,7 +291,7 @@ export const predictMhciiContract = defineContract({
 });
 export const predictBcellContract = defineContract({
   name: 'predict_bcell',
-  description: 'Compute Parker hydrophilicity evidence from an actual sequence, or resolve explicit GraphBepi fixtures.',
+  description: 'Run live IEDB BepiPred-3.0 or local Parker hydrophilicity from a supplied sequence, or resolve explicit GraphBepi fixtures.',
   inputSchema: z
     .object({
       runId: identifierSchema,

@@ -78,7 +78,7 @@ The arrows show a **recommended sequence of separate MCP tool calls by a client*
 | --- | --- | --- |
 | 1. Validate input | `validate_sequence` | Normalized protein sequence and SHA-256 identity, or an input error |
 | 2. Create candidates | `generate_candidate_peptides` | One-based peptide windows; these are candidates, not predictions |
-| 3. Gather evidence | `predict_mhci`, `predict_mhcii`, `predict_bcell` | MHC observations from enabled live connectors or matching fixtures; Parker B-cell hydrophilicity is computed from supplied sequence, GraphBepi remains a fixture, and synthetic binding is a separate demo tool |
+| 3. Gather evidence | `predict_mhci`, `predict_mhcii`, `predict_bcell` | MHC observations from enabled live connectors or matching fixtures; live IEDB BepiPred-3.0 or local Parker B-cell scores; GraphBepi remains a fixture, and synthetic binding is a separate demo tool |
 | 4. Compare evidence | `normalize_scores`, consensus and population tools | Comparable derived values with method and population provenance |
 | 5. Shortlist | Constraint tools, `rank_candidates`, optional shortlist/construct tools | Rule outcomes and deterministic preliminary or final ranks; final ranking requires completed constraints |
 | 6. Review supporting structures | Structure, chemistry, and docking tools when configured | Supporting records and artifacts; these calls do not automatically alter the ranking score |
@@ -98,7 +98,7 @@ The server registers **46 tools in seven modules**. The descriptions below refer
 | `generate_candidate_peptides` | Creates stable, one-based MHC-I or MHC-II peptide windows for requested lengths. |
 | `predict_mhci` | Resolves MHC-I binding observations through configured IEDB/MHCflurry paths or an exact fixture. |
 | `predict_mhcii` | Resolves MHC-II binding observations through configured IEDB or an exact fixture. |
-| `predict_bcell` | Computes the Parker hydrophilicity scale from a supplied sequence as a physicochemical proxy, or replays an exact GraphBepi fixture. |
+| `predict_bcell` | Runs live IEDB BepiPred-3.0 from a supplied sequence when enabled, computes the Parker hydrophilicity scale locally, or replays an exact GraphBepi fixture. |
 | `predict_synthetic_binding` | Computes deterministic offline demonstration binding values, labelled `SYNTHETIC` and unsuitable as scientific predictions. |
 
 ### Evidence and prioritization · 9 tools
@@ -273,7 +273,7 @@ Most live connectors are **disabled by default**. These switches are defined in 
 
 Every tool returns structured success or failure data. Scientific outputs identify how they were produced: `LIVE` for a configured connector, `FIXTURE` for an approved replay, and `SYNTHETIC` for demonstration-only calculations. The server does not present fixture or synthetic values as live measurements.
 
-Live connector paths require external services, model downloads, or installed binaries. GraphBepi is fixture-only in this version. An MCP tool or exported research package is a computational artifact; it is not experimental or clinical validation.
+Live connector paths require external services, model downloads, or installed binaries. Set `IEDB_BCELL_ENABLED=true` and request `methods: ["bepipred-3.0"]` with a sequence and live-permitting fallback policy for the [IEDB next-generation B-cell predictor](https://nextgen-tools.iedb.org/docs/tools/bcell_sequence/). GraphBepi is fixture-only in this version. An MCP tool or exported research package is a computational artifact; it is not experimental or clinical validation.
 
 ## Repository map
 
