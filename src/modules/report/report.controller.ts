@@ -30,6 +30,12 @@ const CATEGORY = 'Report / Export Tools';
 @ControllerDecorator()
 export class ReportController {
   private capabilities: CapabilityPort = unavailableCapabilityPort;
+  private toolInvoker?: (toolName: string, args: Record<string, unknown>, context: ExecutionContext) => Promise<unknown>;
+
+  useToolInvoker(invoke: (toolName: string, args: Record<string, unknown>, context: ExecutionContext) => Promise<unknown>): this {
+    this.toolInvoker = invoke;
+    return this;
+  }
 
   useCapabilityPort(capabilities: CapabilityPort): this {
     this.capabilities = capabilities;
@@ -265,7 +271,9 @@ export class ReportController {
       inputSchema: runAgenticWorkflowContract.inputSchema,
       dataSchema: runAgenticWorkflowContract.dataSchema,
       context,
-      operation: runLangGraphAgentWorkflow,
+      operation: (validated) => runLangGraphAgentWorkflow(validated, this.toolInvoker
+        ? (toolName, args) => this.toolInvoker!(toolName, args, context)
+        : undefined),
     });
   }
 
@@ -297,7 +305,7 @@ export class ReportController {
           evidenceKeys.length === 0
             ? 'I do not have stored evidence for this question, so I must abstain rather than infer scientific facts.'
             : (llm.text ??
-              `Grounded answer from stored ImmunoGraph evidence: ${evidenceKeys.join(', ')}. Scientific values must be interpreted only with their recorded provenance.`);
+              `Supplied evidence for "${validated.question}": ${evidenceKeys.map((key) => `${key}=${JSON.stringify(validated.evidenceSummary[key])}`).join('; ').slice(0, 6000)}. Interpret scientific values with their recorded provenance.`);
         return {
           answer,
           grounded,

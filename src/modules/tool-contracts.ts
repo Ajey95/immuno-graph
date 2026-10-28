@@ -1410,7 +1410,7 @@ const agentStepSchema = z
     selectedAction: identifierSchema,
     toolNames: z.array(identifierSchema),
     observation: identifierSchema,
-    verification: z.enum(['PASSED', 'REQUIRES_APPROVAL', 'ABSTAINED']),
+    verification: z.enum(['PASSED', 'PLANNED', 'REQUIRES_APPROVAL', 'ABSTAINED']),
     decision: z.enum(['CONTINUE', 'REQUEST_APPROVAL', 'ABSTAIN', 'COMPLETE']),
     inputHash: sha256Schema,
     outputHash: sha256Schema,
@@ -1420,7 +1420,7 @@ const agentStepSchema = z
 export const runAgenticWorkflowContract = defineContract({
   name: 'run_agentic_workflow',
   description:
-    'Generate the bounded LangGraph workflow trace inside the MCP server; scientific tools are not executed by this operation.',
+    'Execute supplied approved typed tool calls in a bounded LangGraph workflow, or return a plan when no calls are supplied.',
   inputSchema: z
     .object({
       runId: identifierSchema,
@@ -1428,6 +1428,7 @@ export const runAgenticWorkflowContract = defineContract({
       agentMode: agentModeSchema,
       approvedToolNames: z.array(identifierSchema).min(1),
       requireHumanApproval: z.boolean(),
+      toolCalls: z.array(z.object({ toolName: identifierSchema, arguments: jsonRecord }).strict()).max(46).optional(),
     })
     .strict(),
   dataSchema: z
@@ -1438,6 +1439,7 @@ export const runAgenticWorkflowContract = defineContract({
       status: z.enum(['COMPLETED', 'AWAITING_APPROVAL', 'ABSTAINED']),
       nextApprovalGate: identifierSchema.nullable(),
       steps: z.array(agentStepSchema).min(1),
+      toolResults: z.array(z.object({ agentId: identifierSchema, toolName: identifierSchema, result: z.unknown() }).strict()),
       warnings: z.array(identifierSchema),
     })
     .strict(),

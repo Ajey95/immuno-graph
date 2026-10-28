@@ -113,7 +113,7 @@ The server registers **46 tools in seven modules**. The descriptions below refer
 | `rank_candidates` | Computes profile-based preliminary scores or stable final ranks; final mode requires completed constraint results. |
 | `optimize_shortlist_coverage` | Selects a T-cell shortlist using supplied candidates and coverage targets; local optimization output is marked demonstration-only. |
 | `optimize_construct_genetic` | Runs seeded, deterministic construct optimization with coverage and redundancy constraints; output is demonstration-only. |
-| `calibrate_confidence` | Derives a confidence value from scores, agreement, completeness, and evidence count without experimental calibration. |
+| `calibrate_confidence` | Fits Platt/isotonic calibration with labeled training samples and evaluates on separate labeled outcomes; rule-based mode reports no measured reliability. |
 
 ### Constraints · 5 tools
 
@@ -142,8 +142,8 @@ The server registers **46 tools in seven modules**. The descriptions below refer
 | Tool | What it does |
 | --- | --- |
 | `fetch_compound` | Retrieves PubChem metadata when enabled or replays a labelled compound fixture. |
-| `validate_compound` | Checks compound identity and basic molecular-string shape before downstream use. |
-| `deduplicate_compounds` | Groups compounds by normalized SMILES-like identity. |
+| `validate_compound` | Parses non-fixture SMILES with RDKit and reports canonical molecular identity. |
+| `deduplicate_compounds` | Groups non-fixture compounds by RDKit InChIKey. |
 | `calculate_molecular_descriptors` | Uses RDKit when configured and requested; otherwise returns lightweight labelled estimates. |
 | `prepare_ligand` | Uses configured RDKit and Meeko to export real 3D SDF and PDBQT bytes, or returns a fixture-labelled reference. |
 
@@ -171,7 +171,7 @@ The [live workflow guide](docs/LIVE_WORKFLOWS.md) describes a fresh Vina MCP cal
 | `explain_candidate` | Explains a fixed candidate decision without changing its underlying scientific values. |
 | `export_workflow_trace` | Exports an ordered, redacted trace of supplied events. |
 | `describe_agentic_workflow` | Returns metadata about available stages, tool permissions, and approval gates. |
-| `run_agentic_workflow` | Returns a stage trace from approved tool names; it does **not** execute those scientific tools. |
+| `run_agentic_workflow` | Invokes supplied approved `toolCalls` through LangGraph and returns actual handler results; without calls, returns a plan. |
 | `chat_with_research_agent` | Responds from a caller-supplied evidence summary and abstains when evidence is absent. |
 | `export_research_package` | Returns a checksummed research ZIP as base64 content with artifact metadata, assembled from the supplied snapshot. |
 

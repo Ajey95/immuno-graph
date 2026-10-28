@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -240,7 +240,7 @@ export class ChemistryController {
 
   @Tool({
     name: 'validate_compound',
-    description: 'Validate compound identity and basic molecular string shape before docking.',
+    description: 'Parse and validate real SMILES using RDKit when the compound source is LIVE.',
     inputSchema: validateCompoundInput,
     examples: {
       request: {
@@ -261,7 +261,33 @@ export class ChemistryController {
       inputSchema: validateCompoundInput,
       dataSchema: validateCompoundData,
       context,
-      operation: (value) => {
+      operation: async (value) => {
+        if (value.sourceStatus !== 'FIXTURE') {
+          const environment = loadMcpEnvironment();
+          if (!environment.RDKIT_ENABLED && !this.runtimeInjected) {
+            throw new ToolExecutionError('RDKIT_NOT_CONFIGURED', 'CONNECTOR', 'Live compound validation requires RDKit.');
+          }
+          const script = fileURLToPath(new URL('../../../scripts/live/compound_ops.py', import.meta.url));
+          const result = await this.runtime.runCommand(environment.RDKIT_PYTHON_COMMAND, [script, 'validate', value.smiles]);
+          const parsed = parseCompoundResult(result.stdout);
+          return {
+            compoundId: value.compoundId,
+            valid: parsed.valid,
+            warnings: parsed.valid ? [] : ['invalid-smiles'],
+            checks: [{
+              checkId: 'CHEM-SMILES-001',
+              status: parsed.valid ? 'PASS' as const : 'FAIL' as const,
+              message: parsed.valid
+                ? `RDKit parsed ${parsed.heavyAtomCount} heavy atoms; canonical SMILES ${parsed.canonicalSmiles}.`
+                : 'RDKit rejected the supplied SMILES.',
+            }],
+            provenance: provenance('rdkit', 'validate_compound', value.sourceStatus, {
+              compoundId: value.compoundId,
+              inputSha256: createHash('sha256').update(value.smiles).digest('hex'),
+              ...(parsed.valid ? { canonicalSmiles: parsed.canonicalSmiles, inchiKey: parsed.inchiKey } : {}),
+            }),
+          };
+        }
         const valid = /^[A-Za-z0-9@+\-[\]()=#\\/%.]+$/.test(value.smiles);
         return {
           compoundId: value.compoundId,
@@ -289,7 +315,7 @@ export class ChemistryController {
 
   @Tool({
     name: 'deduplicate_compounds',
-    description: 'Canonicalize compounds by normalized SMILES-like identity.',
+    description: 'Deduplicate live compounds by RDKit canonical isomeric SMILES and InChIKey.',
     inputSchema: deduplicateInput,
     examples: {
       request: {
@@ -308,7 +334,55 @@ export class ChemistryController {
       inputSchema: deduplicateInput,
       dataSchema: deduplicateData,
       context,
-      operation: (value) => {
+      operation: async (value) => {
+        if (value.compounds.some((compound) => compound.sourceStatus !== 'FIXTURE')) {
+          const statuses = new Set(value.compounds.map((compound) => compound.sourceStatus));
+          if (statuses.size !== 1) throw new ToolExecutionError('MIXED_SOURCE_STATUS', 'VALIDATION', 'Deduplicate each source-status cohort separately to preserve provenance.');
+          const environment = loadMcpEnvironment();
+          if (!environment.RDKIT_ENABLED && !this.runtimeInjected) {
+            throw new ToolExecutionError('RDKIT_NOT_CONFIGURED', 'CONNECTOR', 'Live compound deduplication requires RDKit.');
+          }
+          const directory = await mkdtemp(join(tmpdir(), 'immunograph-canonicalize-'));
+          try {
+            const inputPath = join(directory, 'compounds.json');
+            await writeFile(inputPath, JSON.stringify(value.compounds));
+            const script = fileURLToPath(new URL('../../../scripts/live/compound_ops.py', import.meta.url));
+            const result = await this.runtime.runCommand(environment.RDKIT_PYTHON_COMMAND, [script, 'canonicalize', inputPath]);
+            const parsed = JSON.parse(result.stdout) as unknown;
+            if (!Array.isArray(parsed) || parsed.length !== value.compounds.length) {
+              throw new ToolExecutionError('RDKIT_OUTPUT_INVALID', 'CONNECTOR', 'RDKit canonicalization returned an invalid compound list.');
+            }
+            const seen = new Map<string, string>();
+            const canonicalCompoundIds: string[] = [];
+            const duplicateLinks: Array<{ duplicateId: string; canonicalId: string; ruleId: 'CHEM-DUPLICATE-001' }> = [];
+            for (let index = 0; index < value.compounds.length; index += 1) {
+              const compound = value.compounds[index]!;
+              const molecular = parseCompoundResult(JSON.stringify(parsed[index]));
+              if (!molecular.valid) {
+                throw new ToolExecutionError('INVALID_SMILES', 'VALIDATION', `RDKit rejected SMILES for ${compound.compoundId}.`);
+              }
+              const key = molecular.inchiKey;
+              const canonical = seen.get(key);
+              if (canonical) {
+                duplicateLinks.push({ duplicateId: compound.compoundId, canonicalId: canonical, ruleId: 'CHEM-DUPLICATE-001' });
+              } else {
+                seen.set(key, compound.compoundId);
+                canonicalCompoundIds.push(compound.compoundId);
+              }
+            }
+            return {
+              canonicalCompoundIds,
+              duplicateLinks,
+              provenance: provenance('rdkit', 'deduplicate_compounds', value.compounds[0]!.sourceStatus, {
+                compoundCount: value.compounds.length,
+                inputSha256: createHash('sha256').update(JSON.stringify(value.compounds)).digest('hex'),
+                identity: 'InChIKey from RDKit parsed structures',
+              }),
+            };
+          } finally {
+            await rm(directory, { recursive: true, force: true });
+          }
+        }
         const seen = new Map<string, string>();
         const canonicalCompoundIds: string[] = [];
         const duplicateLinks: Array<{
@@ -370,7 +444,10 @@ export class ChemistryController {
       context,
       operation: async (value) => {
         const environment = loadMcpEnvironment();
-        if (value.method === 'rdkit' && (environment.RDKIT_ENABLED || this.runtimeInjected)) {
+        if (value.method === 'rdkit') {
+          if (!environment.RDKIT_ENABLED && !this.runtimeInjected) {
+            throw new ToolExecutionError('RDKIT_NOT_CONFIGURED', 'CONNECTOR', 'RDKit descriptors require RDKit to be enabled.');
+          }
           const result = await this.runtime.runCommand(environment.RDKIT_PYTHON_COMMAND, [
             '-c',
             rdkitDescriptorScript(),
@@ -553,6 +630,21 @@ function parseDescriptorJson(output: string) {
       false,
     );
   }
+}
+
+function parseCompoundResult(output: string):
+  | { valid: false }
+  | { valid: true; canonicalSmiles: string; inchiKey: string; heavyAtomCount: number } {
+  try {
+    const parsed = JSON.parse(output) as Record<string, unknown>;
+    if (parsed.valid === false) return { valid: false };
+    if (parsed.valid === true && typeof parsed.canonicalSmiles === 'string' &&
+      typeof parsed.inchiKey === 'string' && parsed.inchiKey.length > 0 &&
+      typeof parsed.heavyAtomCount === 'number' && Number.isInteger(parsed.heavyAtomCount) && parsed.heavyAtomCount > 0) {
+      return { valid: true, canonicalSmiles: parsed.canonicalSmiles, inchiKey: parsed.inchiKey, heavyAtomCount: parsed.heavyAtomCount };
+    }
+  } catch { /* Invalid provider output is handled below. */ }
+  throw new ToolExecutionError('RDKIT_OUTPUT_INVALID', 'CONNECTOR', 'RDKit compound output was not valid JSON.');
 }
 
 function nonnegativeInteger(value: unknown): number {
