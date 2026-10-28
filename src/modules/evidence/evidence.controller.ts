@@ -719,7 +719,13 @@ function fitIsotonic(samples: LabeledSample[]): (score: number) => number {
   const ordered = [...samples].sort((a, b) => a.score - b.score);
   const blocks: Array<{ maxScore: number; sum: number; count: number }> = [];
   for (const sample of ordered) {
-    blocks.push({ maxScore: sample.score, sum: sample.outcome, count: 1 });
+    const last = blocks[blocks.length - 1];
+    if (last?.maxScore === sample.score) {
+      last.sum += sample.outcome;
+      last.count += 1;
+    } else {
+      blocks.push({ maxScore: sample.score, sum: sample.outcome, count: 1 });
+    }
     while (blocks.length >= 2) {
       const right = blocks[blocks.length - 1]!;
       const left = blocks[blocks.length - 2]!;

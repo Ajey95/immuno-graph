@@ -15,7 +15,10 @@ try {
   for (const method of ['PLATT', 'ISOTONIC'] as const) {
     const result = await call('calibrate_confidence', {
       runId: 'live-calibration', method,
-      predictions: [{ entityId: 'candidate-high', score: 0.9, agreement: 0.8, completeness: 1, evidenceCount: 3 }],
+      predictions: [
+        { entityId: 'candidate-high', score: 0.9, agreement: 0.8, completeness: 1, evidenceCount: 3 },
+        { entityId: 'candidate-high-same-score', score: 0.9, agreement: 0.8, completeness: 1, evidenceCount: 3 },
+      ],
       calibrationSamples: labeled.filter((_, index) => index % 2 === 0),
       evaluationSamples: labeled.filter((_, index) => index % 2 === 1),
     });
@@ -23,6 +26,7 @@ try {
     assert.equal(result.data?.reliability.evaluationCount, 20);
     assert.ok(result.data?.reliability.brierScore < 0.2);
     assert.equal(result.data?.provenance.status, 'LIVE');
+    assert.equal(result.data?.calibrated[0].calibratedConfidence, result.data?.calibrated[1].calibratedConfidence);
   }
   const workflow = await call('run_agentic_workflow', {
     runId: 'live-workflow', objective: 'Validate supplied sequence', agentMode: 'DETERMINISTIC',
