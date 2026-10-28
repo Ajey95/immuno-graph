@@ -13,7 +13,7 @@ Updated 2026-10-28. `npm run test:all-tools` calls all 46 examples through a sta
 | `normalize_scores` | Apply supplied normalization profile | MCP example verified |
 | `compute_consensus` | Weighted consensus over supplied observations | MCP example verified |
 | `compute_consensus_batch` | Batch weighted consensus | MCP example verified |
-| `calculate_population_coverage` | IEDB standalone or configured service | Connector implemented; official runtime not live verified |
+| `calculate_population_coverage` | Official IEDB next-generation API, optional standalone or configured service | Live MCP call verified with World HLA data |
 | `calculate_synthetic_population_coverage` | Deliberately synthetic frequency calculation | Demo only by contract |
 | `rank_candidates` | Rank supplied candidate evidence | MCP example verified |
 | `optimize_shortlist_coverage` | Optimize supplied coverage matrix | MCP example verified; dependent on input provenance |
@@ -54,8 +54,8 @@ Updated 2026-10-28. `npm run test:all-tools` calls all 46 examples through a sta
 ## What still breaks first
 
 1. GraphBepi requires an independently installed model/runtime and a validated output adapter. Its public repository documents Linux, historical Python/Torch versions, pretrained model downloads, and PDB/FASTA prediction commands; it is not bundled here. The Parker path is a hydrophilicity proxy, not an equivalent B-cell model.
-2. The IEDB population coverage connector accepts a configured service or standalone script. The official standalone runtime has not been installed and called in this verification, so live coverage is pending. Do not relabel the exact fixture or synthetic calculator as population evidence.
+2. IEDB next-generation population coverage has a live MCP call with the World AFND dataset. The optional standalone and custom-service paths have not been live verified. Do not relabel the exact fixture or synthetic calculator as population evidence.
 3. Most ranking, confidence, constraint, and export tools consume supplied data. Their code executes real calculations/serialization, but the scientific quality of results follows the provenance and quality of those inputs.
 4. A docking pose, contact, epitope prediction, or population estimate is computational evidence and needs independent scientific review and experimental validation.
 
-Run `scripts/verify-live-workflow.mts` and `scripts/verify-live-chemistry.mts` for the newly added live call proofs. See [LIVE_WORKFLOWS.md](LIVE_WORKFLOWS.md) for the earlier PDB, PubChem, IEDB, Vina, PLIP, FreeSASA, fpocket, and Mol* proof chain.
+Run `scripts/verify-live-workflow.mts`, `scripts/verify-live-chemistry.mts`, and `scripts/verify-live-population.mts` for the newly added live call proofs. See [LIVE_WORKFLOWS.md](LIVE_WORKFLOWS.md) for the earlier PDB, PubChem, IEDB, Vina, PLIP, FreeSASA, fpocket, and Mol* proof chain.

@@ -108,7 +108,7 @@ The server registers **46 tools in seven modules**. The descriptions below refer
 | `normalize_scores` | Applies versioned transformations to raw predictor scores so later comparisons use a defined scale. |
 | `compute_consensus` | Combines method observations into weighted consensus, agreement, and completeness for one candidate group. |
 | `compute_consensus_batch` | Performs the same deterministic consensus calculation across multiple independent groups. |
-| `calculate_population_coverage` | Calculates coverage through a configured service/script or an exact-match fixture. |
+| `calculate_population_coverage` | Calculates HLA population coverage through the official IEDB next-generation API when enabled, an optional standalone/script, or an exact-match fixture. |
 | `calculate_synthetic_population_coverage` | Calculates demonstration coverage from explicitly synthetic HLA frequencies. |
 | `rank_candidates` | Computes profile-based preliminary scores or stable final ranks; final mode requires completed constraint results. |
 | `optimize_shortlist_coverage` | Selects a T-cell shortlist using supplied candidates and coverage targets; local optimization output is marked demonstration-only. |
@@ -261,7 +261,7 @@ Most live connectors are **disabled by default**. These switches are defined in 
 | Capability | Enablement | Additional dependency |
 | --- | --- | --- |
 | IEDB MHC binding | `IEDB_LIVE_ENABLED=true` | Network access to a compatible IEDB endpoint |
-| IEDB population coverage | `IEDB_POPULATION_COVERAGE_ENABLED=true` | Configured endpoint or standalone script |
+| IEDB population coverage | `IEDB_POPULATION_COVERAGE_ENABLED=true` | Official next-generation API by default; optional custom endpoint or standalone script |
 | MHCflurry | `MHCFLURRY_ENABLED=true` | Installed CLI and downloaded models |
 | RCSB PDB / AlphaFold DB | `RCSB_PDB_ENABLED=true` / `ALPHAFOLD_DB_ENABLED=true` | Network access |
 | PubChem | `PUBCHEM_ENABLED=true` | Network access |
