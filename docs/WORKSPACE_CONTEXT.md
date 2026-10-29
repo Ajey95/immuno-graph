@@ -11,7 +11,7 @@ Updated 2026-10-29. Active development branch: `feat/standard-mcp-runtime`; draf
 
 ## Reproduce and inspect
 
-Run `npm ci`, `npm run check`, then set the required live connector variables in `.env.example`. `node --import tsx scripts/verify-live-bcell.mts` saves BepiPred JSON/CSV; `node --import tsx scripts/verify-live-alphafold.mts` saves an AlphaFold PDB and per-residue pLDDT JSON. Set `IMMUNOGRAPH_LIVE_OUTPUT_DIR` to choose an export directory. The two scripts accept `IMMUNOGRAPH_BCELL_SEQUENCE` and `IMMUNOGRAPH_ALPHAFOLD_ACCESSION` respectively. See [LIVE_WORKFLOWS.md](LIVE_WORKFLOWS.md) for the docking file chain and [TOOL_REALITY_MATRIX.md](TOOL_REALITY_MATRIX.md) for each tool's verification status.
+Run `npm ci`, `npm run check`, then set the required live connector variables in the MCP host's server environment, using `.env.example` as a reference. The check includes a 46-tool semantic audit and artifact hash verification. A separate Codex LLM client has exercised sequence validation, candidate generation, and live BepiPred through MCP; host-level environment configuration was required for the IEDB flag. `node --import tsx scripts/verify-live-bcell.mts` saves BepiPred JSON/CSV; `node --import tsx scripts/verify-live-alphafold.mts` saves an AlphaFold PDB and per-residue pLDDT JSON. Set `IMMUNOGRAPH_LIVE_OUTPUT_DIR` to choose an export directory. The two scripts accept `IMMUNOGRAPH_BCELL_SEQUENCE` and `IMMUNOGRAPH_ALPHAFOLD_ACCESSION` respectively. See [LIVE_WORKFLOWS.md](LIVE_WORKFLOWS.md) for the docking file chain and [TOOL_REALITY_MATRIX.md](TOOL_REALITY_MATRIX.md) for each tool's verification status.
 
 ## Remaining limits
 

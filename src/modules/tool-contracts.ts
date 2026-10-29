@@ -618,7 +618,7 @@ export const syntheticPopulationCoverageContract = defineContract({
   exampleInput: {
     runId: 'run-1',
     associations: [{ candidateId: 'candidate-1', allele: 'HLA-A*02:01' }],
-    populationIds: ['synthetic-population-alpha'],
+    populationIds: ['synthetic:population-alpha'],
     classMode: 'CLASS_I' as const,
   },
 });
@@ -1445,10 +1445,16 @@ export const runAgenticWorkflowContract = defineContract({
     .strict(),
   exampleInput: {
     runId: 'run-1',
-    objective: 'Prioritize epitopes with complete provenance.',
+    objective: 'Validate a supplied protein sequence and generate peptide candidates.',
     agentMode: 'DETERMINISTIC' as const,
-    approvedToolNames: ['validate_sequence', 'rank_candidates'],
-    requireHumanApproval: true,
+    approvedToolNames: ['validate_sequence', 'generate_candidate_peptides'],
+    requireHumanApproval: false,
+    toolCalls: [
+      { toolName: 'validate_sequence', arguments: { fasta: '>sample\nACDEFGHIK' } },
+      { toolName: 'generate_candidate_peptides', arguments: {
+        runId: 'run-1', sequence: { $result: 'validate_sequence.data.normalizedSequence' }, candidateType: 'MHCI', peptideLengths: [9],
+      } },
+    ],
   },
 });
 

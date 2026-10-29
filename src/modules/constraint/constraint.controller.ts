@@ -220,7 +220,10 @@ export class ConstraintController {
       'Detect positional overlap competitors and connected components without resolving them.',
     inputSchema: overlapInput,
     examples: {
-      request: { runId: 'example-run', threshold: 0.8, candidates: [overlapExample] },
+      request: { runId: 'example-run', threshold: 0.8, candidates: [
+        overlapExample,
+        { ...overlapExample, id: 'candidate-2', candidateKey: 'key-2', peptide: 'CDEFGHIKL', start: 2, end: 10 },
+      ] },
       response: fail('detect_overlapping_epitopes'),
     },
   })
@@ -242,7 +245,10 @@ export class ConstraintController {
       'Canonicalize exact duplicate identities while preserving identical peptides at different coordinates.',
     inputSchema: duplicateInput,
     examples: {
-      request: { runId: 'example-run', proteinHash: hash, candidates: [duplicateExample] },
+      request: { runId: 'example-run', proteinHash: hash, candidates: [
+        duplicateExample,
+        { ...duplicateExample, id: 'candidate-1-copy' },
+      ] },
       response: fail('remove_duplicate_candidates'),
     },
   })
