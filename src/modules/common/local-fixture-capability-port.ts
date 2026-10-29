@@ -66,6 +66,9 @@ function connectorProvenance(
     sourceUri,
     fixtureId: fixture.fixtureId,
     parameters: { sourceKind: 'SYNTHETIC', scientificUse: false },
+    predictionSource: 'FIXTURE' as const,
+    scientificUse: false,
+    validationStatus: 'VERIFIED_FIXTURE' as const,
   };
 }
 

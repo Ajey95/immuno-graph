@@ -1,8 +1,11 @@
 node_modules/
 dist/
+outputs/
 logs/
 .env
 .tmp-*
+*.tgz
+*.log
 
 .agents/
 .antigravity/

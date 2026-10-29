@@ -6,7 +6,8 @@ import { PredictionController } from './prediction/prediction.controller.js';
 import { ReportController } from './report/report.controller.js';
 import { StructureController } from './structure/structure.controller.js';
 
-export const TOOL_GROUPS = [
+export function createToolGroups() {
+  return [
   {
     name: 'Immunoinformatics Tools',
     controller: new PredictionController() as unknown as Record<string, unknown>,
@@ -35,4 +36,5 @@ export const TOOL_GROUPS = [
     name: 'Report / Export Tools',
     controller: new ReportController() as unknown as Record<string, unknown>,
   },
-] as const;
+  ] as const;
+}

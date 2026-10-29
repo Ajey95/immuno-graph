@@ -50,7 +50,7 @@ export interface WorkflowPlanEdge {
 }
 
 export interface AgenticWorkflowDescription {
-  deploymentBoundary: 'ONE_NITROSTACK_MCP_APP';
+  deploymentBoundary: 'ONE_STANDARD_MCP_SERVER';
   manifestVersion: string;
   planVersion: string;
   runId: string;
@@ -537,7 +537,7 @@ export function describeAgenticWorkflow(input: {
   includeFutureInterfaces: boolean;
 }): AgenticWorkflowDescription {
   return {
-    deploymentBoundary: 'ONE_NITROSTACK_MCP_APP',
+    deploymentBoundary: 'ONE_STANDARD_MCP_SERVER',
     manifestVersion: AGENT_MANIFEST_VERSION,
     planVersion: AGENTIC_WORKFLOW_PLAN_VERSION,
     runId: input.runId,

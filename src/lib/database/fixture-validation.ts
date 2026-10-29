@@ -112,7 +112,7 @@ const observationSchema = z
     rawScore: z.number().finite(),
     percentileRank: z.number().finite().nonnegative(),
     allele: identifierSchema,
-    rawFields: z.record(z.unknown()),
+    rawFields: z.record(z.string(), z.unknown()),
     sourceStatus: z.literal('FIXTURE'),
     provenance: fixtureProvenanceSchema,
   })
@@ -142,7 +142,7 @@ const graphBepiFixtureSchema = z
         .strict()
         .refine((value) => value.end >= value.start, 'region end must not precede start'),
     ),
-    rawMethodFields: z.record(z.unknown()),
+    rawMethodFields: z.record(z.string(), z.unknown()),
     provenance: fixtureProvenanceSchema,
   })
   .strict();
@@ -152,7 +152,7 @@ const coverageFixtureSchema = z
     projectedCoverage: unitIntervalSchema,
     populationIds: z.array(identifierSchema).min(1),
     classMode: z.enum(['CLASS_I', 'CLASS_II', 'COMBINED']),
-    metrics: z.record(z.unknown()),
+    metrics: z.record(z.string(), z.unknown()),
     provenance: fixtureProvenanceSchema,
   })
   .strict();
@@ -191,7 +191,7 @@ const rankingSchema = z
   .object({
     candidateId: identifierSchema,
     track: z.enum(['MHCI', 'MHCII', 'BCELL']),
-    componentScores: z.record(unitIntervalSchema),
+    componentScores: z.record(z.string(), unitIntervalSchema),
     finalScore: unitIntervalSchema,
     category: z.enum(['RECOMMENDED', 'REVIEW', 'REJECTED']),
     confidence: z.enum(['HIGH', 'MEDIUM', 'LOW', 'NOT_APPLICABLE']),

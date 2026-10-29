@@ -2,7 +2,7 @@ import { performance } from 'node:perf_hooks';
 
 import { canonicalJsonSha256 } from '../../lib/algorithms/index.js';
 import type { CanonicalJsonValue } from '../../lib/algorithms/index.js';
-import type { ExecutionContext, JsonValue } from '@nitrostack/core';
+import type { ExecutionContext, JsonValue } from './mcp-compat.js';
 import { z } from 'zod';
 
 import { CapabilityUnavailableError } from './capability-port.js';

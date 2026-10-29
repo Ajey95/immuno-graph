@@ -14,7 +14,7 @@ const rawMcpEnvironmentSchema = z.object({
   LLM_ENABLED: z
     .enum(['true', 'false'])
     .transform((v) => v === 'true')
-    .default('false'),
+    .default(false),
   OPENAI_API_KEY: z.string().min(1).optional(),
   LLM_MODEL: z.string().min(1).default('gpt-4.1-mini'),
   LLM_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
@@ -22,7 +22,7 @@ const rawMcpEnvironmentSchema = z.object({
   IEDB_LIVE_ENABLED: z
     .enum(['true', 'false'])
     .transform((v) => v === 'true')
-    .default('false'),
+    .default(false),
   /** Per-request timeout for IEDB HTTP calls (ms). */
   IEDB_TIMEOUT_MS: z.coerce.number().int().positive().default(120_000),
   /** Maximum permitted IEDB response body size (bytes). */
@@ -31,6 +31,10 @@ const rawMcpEnvironmentSchema = z.object({
     .int()
     .positive()
     .default(10 * 1024 * 1024),
+  /** Enable IEDB's next-generation BepiPred-3.0 sequence prediction API. */
+  IEDB_BCELL_ENABLED: z.enum(['true', 'false']).transform((v) => v === 'true').default(false),
+  IEDB_BCELL_TIMEOUT_MS: z.coerce.number().int().positive().default(300_000),
+  IEDB_BCELL_MAX_RESPONSE_BYTES: z.coerce.number().int().positive().default(10 * 1024 * 1024),
   /** Override the IEDB MHC-I endpoint (leave unset to use the official URL). */
   IEDB_MHCI_URL: z.string().url().optional(),
   /** Override the IEDB MHC-II endpoint (leave unset to use the official URL). */
@@ -42,7 +46,7 @@ const rawMcpEnvironmentSchema = z.object({
   IEDB_POPULATION_COVERAGE_ENABLED: z
     .enum(['true', 'false'])
     .transform((v) => v === 'true')
-    .default('false'),
+    .default(false),
   /** Explicit configured IEDB-compatible population coverage HTTP endpoint. */
   IEDB_POPULATION_COVERAGE_URL: z.string().url().optional(),
   /** Absolute or runtime-relative path to IEDB's standalone population coverage script. */
@@ -61,7 +65,7 @@ const rawMcpEnvironmentSchema = z.object({
   MHCFLURRY_ENABLED: z
     .enum(['true', 'false'])
     .transform((v) => v === 'true')
-    .default('false'),
+    .default(false),
   /** Local MHCflurry command name or absolute path. */
   MHCFLURRY_COMMAND: z.string().min(1).default('mhcflurry'),
   /** Recorded MHCflurry method/model version for provenance. */
@@ -77,65 +81,73 @@ const rawMcpEnvironmentSchema = z.object({
   STRUCTURE_ENABLED: z
     .enum(['true', 'false'])
     .transform((v) => v === 'true')
-    .default('true'),
+    .default(true),
   RCSB_PDB_ENABLED: z
     .enum(['true', 'false'])
     .transform((v) => v === 'true')
-    .default('false'),
+    .default(false),
   ALPHAFOLD_DB_ENABLED: z
     .enum(['true', 'false'])
     .transform((v) => v === 'true')
-    .default('false'),
+    .default(false),
   CHEMISTRY_ENABLED: z
     .enum(['true', 'false'])
     .transform((v) => v === 'true')
-    .default('true'),
+    .default(true),
   PUBCHEM_ENABLED: z
     .enum(['true', 'false'])
     .transform((v) => v === 'true')
-    .default('false'),
+    .default(false),
   RDKIT_ENABLED: z
     .enum(['true', 'false'])
     .transform((v) => v === 'true')
-    .default('false'),
+    .default(false),
   RDKIT_PYTHON_COMMAND: z.string().min(1).default('python'),
   OPENBABEL_ENABLED: z
     .enum(['true', 'false'])
     .transform((v) => v === 'true')
-    .default('false'),
+    .default(false),
   OPENBABEL_COMMAND: z.string().min(1).default('obabel'),
+  MEEKO_ENABLED: z
+    .enum(['true', 'false'])
+    .transform((v) => v === 'true')
+    .default(false),
+  MEEKO_PYTHON_COMMAND: z.string().min(1).default('python'),
   DOCKING_ENABLED: z
     .enum(['true', 'false'])
     .transform((v) => v === 'true')
-    .default('true'),
+    .default(true),
   VINA_ENABLED: z
     .enum(['true', 'false'])
     .transform((v) => v === 'true')
-    .default('false'),
+    .default(false),
   VINA_COMMAND: z.string().min(1).default('vina'),
+  VINA_WSL_DISTRO: z.string().default(''),
   PLIP_ENABLED: z
     .enum(['true', 'false'])
     .transform((v) => v === 'true')
-    .default('false'),
+    .default(false),
   PLIP_COMMAND: z.string().min(1).default('plip'),
+  SCIENTIFIC_PYTHON_COMMAND: z.string().min(1).default('python'),
   FPOCKET_ENABLED: z
     .enum(['true', 'false'])
     .transform((v) => v === 'true')
-    .default('false'),
+    .default(false),
   FPOCKET_COMMAND: z.string().min(1).default('fpocket'),
+  FPOCKET_WSL_DISTRO: z.string().default(''),
   FREESASA_ENABLED: z
     .enum(['true', 'false'])
     .transform((v) => v === 'true')
-    .default('false'),
+    .default(false),
   FREESASA_COMMAND: z.string().min(1).default('freesasa'),
   MOLSTAR_ENABLED: z
     .enum(['true', 'false'])
     .transform((v) => v === 'true')
-    .default('false'),
+    .default(false),
   DOCKING_FIXTURE_FALLBACK_ENABLED: z
     .enum(['true', 'false'])
     .transform((v) => v === 'true')
-    .default('true'),
+    .default(true),
 });
 
 export type McpEnvironment = z.infer<typeof rawMcpEnvironmentSchema> & {

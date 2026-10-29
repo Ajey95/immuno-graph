@@ -40,7 +40,7 @@ export const toolFailureSchema = z.object({
     ]),
     message: z.string().min(1),
     retryable: z.boolean(),
-    details: z.record(z.unknown()).optional(),
+    details: z.record(z.string(), z.unknown()).optional(),
   }),
   meta: toolMetaSchema.partial().extend({
     requestId: identifierSchema,
@@ -76,7 +76,7 @@ export const connectorProvenanceSchema = z.object({
   sourceUri: z.string().url().optional(),
   cacheKey: sha256Schema.optional(),
   fixtureId: identifierSchema.optional(),
-  parameters: z.record(z.unknown()),
+  parameters: z.record(z.string(), z.unknown()),
   predictionSource: z.enum(['LIVE', 'CACHED', 'SYNTHETIC', 'FIXTURE']).optional(),
   scientificUse: z.boolean().optional(),
   validationStatus: z.enum(['SCIENTIFIC', 'DEMONSTRATION_ONLY', 'VERIFIED_FIXTURE']).optional(),

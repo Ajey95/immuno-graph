@@ -8,16 +8,16 @@
 <p align="center">
   <img alt="MCP server" src="https://img.shields.io/badge/MCP-single%20server-6144b1?style=flat-square" />
   <img alt="46 registered tools" src="https://img.shields.io/badge/tools-46-216e8a?style=flat-square" />
-  <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5.x-3178c6?style=flat-square" />
-  <img alt="NitroStack" src="https://img.shields.io/badge/runtime-NitroStack-243b53?style=flat-square" />
+  <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-6.x-3178c6?style=flat-square" />
+  <img alt="MCP SDK" src="https://img.shields.io/badge/runtime-official%20MCP%20SDK-243b53?style=flat-square" />
 </p>
 
-ImmunoGraph exposes sequence validation, prediction adapters, evidence processing, structure and chemistry utilities, docking adapters, and research-package export through **one NitroStack MCP application**. An MCP host can discover and call the tools individually. The server contains 46 registered tools across seven modules; the modules are **not** separate MCP servers.
+ImmunoGraph exposes sequence validation, prediction adapters, evidence processing, structure and chemistry utilities, docking adapters, and research-package export through **one standard MCP server**. An MCP host can discover and call the tools individually. The server contains 46 registered tools across seven groups.
 
 > [!IMPORTANT]
 > ImmunoGraph is computational research support. Its synthetic and fixture outputs are demonstrations, not experimental evidence. A candidate shortlist, docking pose, or generated report does not establish vaccine efficacy, safety, or clinical utility. Independent scientific review and experimental validation are required.
 
-**Jump to:** [The problem](#the-research-problem) · [Our solution](#the-mcp-solution) · [End-to-end flow](#end-to-end-flow) · [All 46 tools](#tool-catalog) · [Quick start](#quick-start) · [Provenance](#provenance-and-scientific-use)
+**Jump to:** [The problem](#the-research-problem) · [Our solution](#the-mcp-solution) · [End-to-end flow](#end-to-end-flow) · [All 46 tools](#tool-catalog) · [Live files and docking](docs/LIVE_WORKFLOWS.md) · [Quick start](#quick-start) · [Architecture](docs/ARCHITECTURE.md) · [Provenance](#provenance-and-scientific-use)
 
 ## The research problem
 
@@ -53,7 +53,7 @@ Live scientific connectors are optional. The bundled synthetic data and exact-ma
 | Tools | 46 registered operations spanning sequence, evidence, constraints, structure, chemistry, docking, and export |
 | Contracts | Zod input and output schemas with structured success or failure responses |
 | Traceability | Run IDs, timestamps, input hashes, output hashes on success, and source labels for scientific data |
-| Deployment | NitroStack application with configurable MCP transport; see [`.env.example`](.env.example) |
+| Deployment | Official MCP TypeScript SDK over stdio or Streamable HTTP; see [`.env.example`](.env.example) |
 
 Clients can combine these tools in their own research workflow. Each operation remains callable on its own; the MCP server does not require five separate MCP installations.
 
@@ -78,7 +78,7 @@ The arrows show a **recommended sequence of separate MCP tool calls by a client*
 | --- | --- | --- |
 | 1. Validate input | `validate_sequence` | Normalized protein sequence and SHA-256 identity, or an input error |
 | 2. Create candidates | `generate_candidate_peptides` | One-based peptide windows; these are candidates, not predictions |
-| 3. Gather evidence | `predict_mhci`, `predict_mhcii`, `predict_bcell` | MHC observations from enabled live connectors or matching fixtures; B-cell evidence is fixture-only, and synthetic binding is a separate demo tool |
+| 3. Gather evidence | `predict_mhci`, `predict_mhcii`, `predict_bcell` | MHC observations from enabled live connectors or matching fixtures; live IEDB BepiPred-3.0 or local Parker B-cell scores; GraphBepi remains a fixture, and synthetic binding is a separate demo tool |
 | 4. Compare evidence | `normalize_scores`, consensus and population tools | Comparable derived values with method and population provenance |
 | 5. Shortlist | Constraint tools, `rank_candidates`, optional shortlist/construct tools | Rule outcomes and deterministic preliminary or final ranks; final ranking requires completed constraints |
 | 6. Review supporting structures | Structure, chemistry, and docking tools when configured | Supporting records and artifacts; these calls do not automatically alter the ranking score |
@@ -98,7 +98,7 @@ The server registers **46 tools in seven modules**. The descriptions below refer
 | `generate_candidate_peptides` | Creates stable, one-based MHC-I or MHC-II peptide windows for requested lengths. |
 | `predict_mhci` | Resolves MHC-I binding observations through configured IEDB/MHCflurry paths or an exact fixture. |
 | `predict_mhcii` | Resolves MHC-II binding observations through configured IEDB or an exact fixture. |
-| `predict_bcell` | Replays B-cell residue/region evidence from an exact GraphBepi fixture; no live B-cell connector is implemented here. |
+| `predict_bcell` | Runs live IEDB BepiPred-3.0 from a supplied sequence when enabled, computes the Parker hydrophilicity scale locally, or replays an exact GraphBepi fixture. |
 | `predict_synthetic_binding` | Computes deterministic offline demonstration binding values, labelled `SYNTHETIC` and unsuitable as scientific predictions. |
 
 ### Evidence and prioritization · 9 tools
@@ -108,12 +108,12 @@ The server registers **46 tools in seven modules**. The descriptions below refer
 | `normalize_scores` | Applies versioned transformations to raw predictor scores so later comparisons use a defined scale. |
 | `compute_consensus` | Combines method observations into weighted consensus, agreement, and completeness for one candidate group. |
 | `compute_consensus_batch` | Performs the same deterministic consensus calculation across multiple independent groups. |
-| `calculate_population_coverage` | Calculates coverage through a configured service/script or an exact-match fixture. |
+| `calculate_population_coverage` | Calculates HLA population coverage through the official IEDB next-generation API when enabled, an optional standalone/script, or an exact-match fixture. |
 | `calculate_synthetic_population_coverage` | Calculates demonstration coverage from explicitly synthetic HLA frequencies. |
 | `rank_candidates` | Computes profile-based preliminary scores or stable final ranks; final mode requires completed constraint results. |
 | `optimize_shortlist_coverage` | Selects a T-cell shortlist using supplied candidates and coverage targets; local optimization output is marked demonstration-only. |
 | `optimize_construct_genetic` | Runs seeded, deterministic construct optimization with coverage and redundancy constraints; output is demonstration-only. |
-| `calibrate_confidence` | Derives a confidence value from scores, agreement, completeness, and evidence count without experimental calibration. |
+| `calibrate_confidence` | Fits Platt/isotonic calibration with labeled training samples and evaluates on separate labeled outcomes; rule-based mode reports no measured reliability. |
 
 ### Constraints · 5 tools
 
@@ -129,41 +129,37 @@ The server registers **46 tools in seven modules**. The descriptions below refer
 
 | Tool | What it does |
 | --- | --- |
-| `fetch_structure` | Retrieves RCSB PDB/AlphaFold data when enabled, or returns a labelled fixture record. |
-| `validate_structure` | Checks structure metadata before coordinate mapping or docking preparation. |
-| `map_epitopes_to_structure` | Maps candidate sequence coordinates to a supplied structure reference. |
-| `calculate_surface_accessibility` | Uses configured FreeSASA or returns fixture-safe accessibility summaries. |
-| `calculate_structure_confidence` | Summarizes supplied structure metrics or labelled fixture defaults. |
-| `detect_binding_pockets` | Uses configured fpocket, or returns a fixture result/failure according to the request. |
-| `create_molstar_view` | Produces a Mol* view-state reference for a client visualization; it is not a built-in viewer. |
+| `fetch_structure` | Retrieves RCSB PDB/AlphaFold coordinates when enabled and returns the actual PDB bytes as an inline artifact, or a labelled fixture record. |
+| `validate_structure` | Checks actual PDB chain and residue records for live input, or checks labelled fixture metadata. |
+| `map_epitopes_to_structure` | Aligns a reference sequence to actual PDB protein chains with BioPython and maps candidate positions. |
+| `calculate_surface_accessibility` | Runs FreeSASA on supplied PDB coordinates and mapped residues, exporting per-residue areas. |
+| `calculate_structure_confidence` | Extracts per-residue AlphaFold pLDDT from supplied AlphaFold DB PDB bytes and exports JSON, or summarizes explicitly supplied normalized metrics. |
+| `detect_binding_pockets` | Runs fpocket on supplied PDB coordinates and returns scored pockets with measured alpha sphere centers. |
+| `create_molstar_view` | Exports a Mol* HTML viewer embedding supplied protein and optional ligand PDB coordinates. |
 
 ### Chemistry · 5 tools
 
 | Tool | What it does |
 | --- | --- |
 | `fetch_compound` | Retrieves PubChem metadata when enabled or replays a labelled compound fixture. |
-| `validate_compound` | Checks compound identity and basic molecular-string shape before downstream use. |
-| `deduplicate_compounds` | Groups compounds by normalized SMILES-like identity. |
+| `validate_compound` | Parses non-fixture SMILES with RDKit and reports canonical molecular identity. |
+| `deduplicate_compounds` | Groups non-fixture compounds by RDKit InChIKey. |
 | `calculate_molecular_descriptors` | Uses RDKit when configured and requested; otherwise returns lightweight labelled estimates. |
-| `prepare_ligand` | Invokes configured Open Babel or returns a fixture-labelled ligand artifact reference. |
+| `prepare_ligand` | Uses configured RDKit and Meeko to export real 3D SDF and PDBQT bytes, or returns a fixture-labelled reference. |
 
 ### Docking · 5 tools
 
 | Tool | What it does |
 | --- | --- |
-| `prepare_receptor` | Invokes configured receptor preparation tooling or returns a fixture-labelled reference. |
+| `prepare_receptor` | Uses configured Meeko with supplied PDB bytes and chain selection to export real PDBQT bytes, or returns a fixture-labelled reference. |
 | `validate_docking_box` | Checks docking-box dimensions before an attempted docking run. |
-| `run_docking` | Invokes configured AutoDock Vina or returns deterministic fixture-labelled poses. |
-| `cluster_docking_poses` | Groups supplied pose data into representative pose clusters. |
-| `extract_interactions` | Invokes configured PLIP or returns fixture-labelled interaction summaries. |
+| `run_docking` | Runs AutoDock Vina on supplied receptor and ligand PDBQT bytes plus a real box. Exports pose PDBQT, a protein-ligand complex PDB, 3D viewer HTML, and a ZIP. |
+| `cluster_docking_poses` | Clusters actual Vina ligand coordinates by RMSD with hierarchical or DBSCAN-style grouping. |
+| `extract_interactions` | Runs PLIP on a supplied complex PDB and exports parsed contacts and the original XML report. |
 
 #### Molecular docking result
 
-<p align="center">
-  <img src="https://github.com/user-attachments/assets/549ff61f-1262-4627-be98-44ea9b82455d" alt="ImmunoGraph molecular docking result for the 1UYD receptor and PubChem CID 2244 ligand" width="620" />
-</p>
-
-<p align="center"><em>Actual molecular docking output generated by ImmunoGraph: RCSB 1UYD receptor, PubChem CID 2244 ligand, AutoDock Vina poses, and inferred contact geometry. <a href="oldreadme.md#docking-visualization">View the original result description</a>.</em></p>
+The [live workflow guide](docs/LIVE_WORKFLOWS.md) describes a fresh Vina MCP call against the official 1IEP example, including the exported pose coordinates, 3D viewer, and reproducibility settings. The viewer is generated from the returned coordinates.
 
 ### Reports and utilities · 9 tools
 
@@ -175,7 +171,7 @@ The server registers **46 tools in seven modules**. The descriptions below refer
 | `explain_candidate` | Explains a fixed candidate decision without changing its underlying scientific values. |
 | `export_workflow_trace` | Exports an ordered, redacted trace of supplied events. |
 | `describe_agentic_workflow` | Returns metadata about available stages, tool permissions, and approval gates. |
-| `run_agentic_workflow` | Returns a stage trace from approved tool names; it does **not** execute those scientific tools. |
+| `run_agentic_workflow` | Invokes supplied approved `toolCalls` through LangGraph and returns actual handler results; without calls, returns a plan. |
 | `chat_with_research_agent` | Responds from a caller-supplied evidence summary and abstains when evidence is absent. |
 | `export_research_package` | Returns a checksummed research ZIP as base64 content with artifact metadata, assembled from the supplied snapshot. |
 
@@ -185,7 +181,7 @@ The workflow/chat utility names are part of the MCP API. The client still makes 
 
 ```mermaid
 flowchart LR
-    Host["MCP host / research client"] --> Server["immunograph-mcp<br/>one NitroStack server"]
+    Host["MCP host / research client"] --> Server["immunograph-mcp<br/>one standard MCP server"]
     Server --> Tools["46 typed tools<br/>7 modules"]
     Tools --> Algorithms["Local algorithms<br/>and profiles"]
     Tools --> Live["Optional live services<br/>and local binaries"]
@@ -193,23 +189,51 @@ flowchart LR
     Tools --> Export["Reports, CSV exports<br/>and research ZIP"]
 ```
 
-The MCP server is registered in [`src/app.module.ts`](src/app.module.ts). Algorithms and data loaders are under `src/lib/`; tool handlers and connector adapters are under `src/modules/`. `data/` contains the reference manifests, profiles, schemas, and offline fixtures needed by the server. Run the application from the repository root so those files resolve correctly.
+The MCP server is registered in [`src/server.ts`](src/server.ts). Algorithms and data loaders are under `src/lib/`; tool handlers and connector adapters are under `src/modules/`. `data/` contains the reference manifests, profiles, schemas, and offline fixtures needed by the server. Run the application from the repository root so those files resolve correctly.
 
 ## Quick start
 
-**Requirements:** Node.js 20.19.x and npm 10.x are the documented project target. Live scientific features additionally need their respective services, model downloads, or local binaries.
+**Requirements:** Node.js 20 or newer. Live scientific features additionally need their respective services, model downloads, or local binaries.
 
 ```bash
 git clone https://github.com/Ajey95/immuno-graph.git
 cd immuno-graph
 npm ci
+npm test
 npm run build
+npm run test:all-tools
 npm start
 ```
 
-The build compiles the MCP package. On startup, NitroStack registers the 46 tools. `npm run dev` is also available for NitroStack's development workflow. To customize runtime settings, copy [`.env.example`](.env.example) to `.env` and set only the capabilities you intend to use. Keep `data/` alongside the application when deploying; the reference and fixture loaders read from the repository root.
+`npm start` serves MCP over stdio. The server registers all 46 tools with the official MCP TypeScript SDK. Diagnostics go to stderr so stdout remains the protocol channel. `npm run dev` starts the TypeScript source directly. Keep `data/` alongside `dist/` when deploying; reference and fixture loaders resolve it relative to the installed package.
 
-**Connecting an MCP host:** launch the built `dist/index.js` with the repository root as its working directory and choose a transport supported by your NitroStack/host setup. `.env.example` documents the transport settings. This repository does not ship a host-specific client configuration.
+**Local MCP host configuration:** use an absolute path to the built entry point:
+
+```json
+{
+  "mcpServers": {
+    "immunograph": {
+      "command": "node",
+      "args": ["/absolute/path/to/immuno-graph/dist/index.js"]
+    }
+  }
+}
+```
+
+For a local HTTP endpoint, run `npm run start:http` and connect to `http://127.0.0.1:3000/mcp`. `GET /health` is a public health probe. For a remote deployment, set `HOST=0.0.0.0`, a long `IMMUNOGRAPH_API_KEY`, exact `IMMUNOGRAPH_ALLOWED_HOSTS` and `IMMUNOGRAPH_ALLOWED_ORIGINS`, and terminate TLS at the ingress. The supplied [Dockerfile](Dockerfile) runs HTTP; it does not publish a managed endpoint. See [SECURITY.md](SECURITY.md) for deployment guidance.
+
+To try the container locally after setting a long random API key:
+
+```bash
+docker build -t immunograph-mcp:local .
+docker run --rm -p 3000:3000 \
+  -e IMMUNOGRAPH_API_KEY=replace-with-a-long-random-secret \
+  -e IMMUNOGRAPH_ALLOWED_HOSTS=localhost,127.0.0.1 \
+  -e IMMUNOGRAPH_ALLOWED_ORIGINS=localhost,127.0.0.1 \
+  immunograph-mcp:local
+```
+
+The package and [MCP Registry manifest](server.json) are prepared for publication but have **not** been published as part of this migration. Build and run from source until a release is made.
 
 ## MCP usage
 
@@ -226,6 +250,10 @@ The response contains a normalized sequence, its length and SHA-256 hash, or a s
 
 For a standalone offline demonstration, the repository includes exact-match fixtures in `data/fixtures/` and a separate `predict_synthetic_binding` tool. Fixture-backed prediction only succeeds when the protein reference **and** method, allele, peptide-length, and parameter selectors match an approved fixture. An arbitrary new sequence is not automatically given a fixture prediction.
 
+`npm run test:all-tools` calls every documented example through a real stdio MCP client. It verifies all 46 local deterministic or fixture paths. Report and export tools accept caller-supplied snapshots because the server does not keep run state; their examples show the required input shapes. Missing snapshots return a structured dependency error unless the host installs a capability provider. This test does not validate live connector availability or scientific accuracy.
+
+`generate_report` supports JSON and CSV. PDF is not currently emitted by the server.
+
 ## Optional live connectors
 
 Most live connectors are **disabled by default**. These switches are defined in [`src/modules/config/environment.ts`](src/modules/config/environment.ts):
@@ -233,24 +261,27 @@ Most live connectors are **disabled by default**. These switches are defined in 
 | Capability | Enablement | Additional dependency |
 | --- | --- | --- |
 | IEDB MHC binding | `IEDB_LIVE_ENABLED=true` | Network access to a compatible IEDB endpoint |
-| IEDB population coverage | `IEDB_POPULATION_COVERAGE_ENABLED=true` | Configured endpoint or standalone script |
+| IEDB BepiPred-3.0 | `IEDB_BCELL_ENABLED=true` | Network access to IEDB's next-generation API |
+| IEDB population coverage | `IEDB_POPULATION_COVERAGE_ENABLED=true` | Official next-generation API by default; optional custom endpoint or standalone script |
 | MHCflurry | `MHCFLURRY_ENABLED=true` | Installed CLI and downloaded models |
 | RCSB PDB / AlphaFold DB | `RCSB_PDB_ENABLED=true` / `ALPHAFOLD_DB_ENABLED=true` | Network access |
 | PubChem | `PUBCHEM_ENABLED=true` | Network access |
 | RDKit / Open Babel | `RDKIT_ENABLED=true` / `OPENBABEL_ENABLED=true` | Installed Python package or binary and valid chemistry inputs |
-| FreeSASA / fpocket | `FREESASA_ENABLED=true` / `FPOCKET_ENABLED=true` | Installed binaries and valid structure inputs |
-| AutoDock Vina / PLIP | `VINA_ENABLED=true` / `PLIP_ENABLED=true` | Installed binaries and valid docking inputs |
+| FreeSASA / fpocket | `FREESASA_ENABLED=true` / `FPOCKET_ENABLED=true` | Python FreeSASA, native fpocket, and actual PDB coordinates |
+| AutoDock Vina / PLIP | `VINA_ENABLED=true` / `PLIP_ENABLED=true` | Vina executable, Python PLIP, and actual docking inputs |
 
 ## Provenance and scientific use
 
 Every tool returns structured success or failure data. Scientific outputs identify how they were produced: `LIVE` for a configured connector, `FIXTURE` for an approved replay, and `SYNTHETIC` for demonstration-only calculations. The server does not present fixture or synthetic values as live measurements.
 
-Live connector paths require external services, model downloads, or installed binaries. GraphBepi is fixture-only in this version. An MCP tool or exported research package is a computational artifact; it is not experimental or clinical validation.
+Live connector paths require external services, model downloads, or installed binaries. Set `IEDB_BCELL_ENABLED=true` and request `methods: ["bepipred-3.0"]` with a sequence and live-permitting fallback policy for the [IEDB next-generation B-cell predictor](https://nextgen-tools.iedb.org/docs/tools/bcell_sequence/). For structure confidence, pass the actual PDB artifact from `fetch_structure` with `modelSource: "ALPHAFOLD_DB"` and `sourceStatus: "LIVE"`; [AlphaFold DB stores pLDDT in the PDB B-factor field](https://www.alphafold.ebi.ac.uk/faq). GraphBepi is fixture-only in this version. An MCP tool or exported research package is a computational artifact; it is not experimental or clinical validation.
 
 ## Repository map
 
 ```text
-src/app.module.ts          NitroStack MCP application and module registration
+src/server.ts              Official MCP tool registration
+src/index.ts               Stdio entry point
+src/http-server.ts          HTTP guard and transport wiring
 src/modules/               MCP tool controllers and connector adapters
 src/lib/algorithms/         Local deterministic algorithms
 src/lib/database/           Data/fixture/profile loaders and validation
@@ -261,7 +292,7 @@ data/fixtures/              Exact-match offline demonstration cases
 
 ## Verification
 
-For the MCP package reviewed on 6 October 2026: `npm ci` and `npm run build` completed, and `npm start` initialized the server with **46 tools** after the full `data/` directory was present. Live connector results and scientific accuracy were not verified by that check.
+Run `npm test`, `npm run build`, `npm audit --audit-level=high`, and `npm pack --dry-run`. The integration tests use real MCP clients to list all 46 tools and call `validate_sequence` over stdio and HTTP. These software checks do not establish live connector performance or scientific accuracy.
 
 ---
 
