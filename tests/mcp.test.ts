@@ -92,6 +92,26 @@ test('standard MCP client discovers and calls the preserved scientific tools', a
     const mixedBcellData = mixedBcell.structuredContent as { ok: boolean; error: { code: string } };
     assert.equal(mixedBcellData.error.code, 'BEPIPRED_SINGLE_METHOD_REQUIRED');
 
+    const experimentalPdb = 'HEADER    TEST MODEL\nTITLE     EXPERIMENTAL STRUCTURE\nATOM      1  CA  ALA A   1      11.104  13.207   8.678  1.00 42.00           C\nEND\n';
+    const incorrectPlddt = await client.callTool({
+      name: 'calculate_structure_confidence',
+      arguments: {
+        runId: 'test-run', structureId: 'experimental-model', sourceStatus: 'LIVE',
+        modelSource: 'ALPHAFOLD_DB', structurePdbBase64: Buffer.from(experimentalPdb).toString('base64'),
+      },
+    });
+    assert.equal(incorrectPlddt.isError, true);
+    const incorrectPlddtData = incorrectPlddt.structuredContent as { ok: boolean; error: { code: string } };
+    assert.equal(incorrectPlddtData.error.code, 'PLDDT_NOT_ALPHAFOLD_PDB');
+
+    const missingMetrics = await client.callTool({
+      name: 'calculate_structure_confidence',
+      arguments: { runId: 'test-run', structureId: 'missing-metrics', sourceStatus: 'LIVE' },
+    });
+    assert.equal(missingMetrics.isError, true);
+    const missingMetricsData = missingMetrics.structuredContent as { ok: boolean; error: { code: string } };
+    assert.equal(missingMetricsData.error.code, 'CONFIDENCE_METRICS_REQUIRED');
+
     const invalid = await client.callTool({ name: 'validate_sequence', arguments: { fasta: '' } });
     assert.equal(invalid.isError, true);
   } finally {

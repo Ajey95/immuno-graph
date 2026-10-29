@@ -133,7 +133,7 @@ The server registers **46 tools in seven modules**. The descriptions below refer
 | `validate_structure` | Checks actual PDB chain and residue records for live input, or checks labelled fixture metadata. |
 | `map_epitopes_to_structure` | Aligns a reference sequence to actual PDB protein chains with BioPython and maps candidate positions. |
 | `calculate_surface_accessibility` | Runs FreeSASA on supplied PDB coordinates and mapped residues, exporting per-residue areas. |
-| `calculate_structure_confidence` | Summarizes supplied structure metrics or labelled fixture defaults. |
+| `calculate_structure_confidence` | Extracts per-residue AlphaFold pLDDT from supplied AlphaFold DB PDB bytes and exports JSON, or summarizes explicitly supplied normalized metrics. |
 | `detect_binding_pockets` | Runs fpocket on supplied PDB coordinates and returns scored pockets with measured alpha sphere centers. |
 | `create_molstar_view` | Exports a Mol* HTML viewer embedding supplied protein and optional ligand PDB coordinates. |
 
@@ -261,6 +261,7 @@ Most live connectors are **disabled by default**. These switches are defined in 
 | Capability | Enablement | Additional dependency |
 | --- | --- | --- |
 | IEDB MHC binding | `IEDB_LIVE_ENABLED=true` | Network access to a compatible IEDB endpoint |
+| IEDB BepiPred-3.0 | `IEDB_BCELL_ENABLED=true` | Network access to IEDB's next-generation API |
 | IEDB population coverage | `IEDB_POPULATION_COVERAGE_ENABLED=true` | Official next-generation API by default; optional custom endpoint or standalone script |
 | MHCflurry | `MHCFLURRY_ENABLED=true` | Installed CLI and downloaded models |
 | RCSB PDB / AlphaFold DB | `RCSB_PDB_ENABLED=true` / `ALPHAFOLD_DB_ENABLED=true` | Network access |
@@ -273,7 +274,7 @@ Most live connectors are **disabled by default**. These switches are defined in 
 
 Every tool returns structured success or failure data. Scientific outputs identify how they were produced: `LIVE` for a configured connector, `FIXTURE` for an approved replay, and `SYNTHETIC` for demonstration-only calculations. The server does not present fixture or synthetic values as live measurements.
 
-Live connector paths require external services, model downloads, or installed binaries. Set `IEDB_BCELL_ENABLED=true` and request `methods: ["bepipred-3.0"]` with a sequence and live-permitting fallback policy for the [IEDB next-generation B-cell predictor](https://nextgen-tools.iedb.org/docs/tools/bcell_sequence/). GraphBepi is fixture-only in this version. An MCP tool or exported research package is a computational artifact; it is not experimental or clinical validation.
+Live connector paths require external services, model downloads, or installed binaries. Set `IEDB_BCELL_ENABLED=true` and request `methods: ["bepipred-3.0"]` with a sequence and live-permitting fallback policy for the [IEDB next-generation B-cell predictor](https://nextgen-tools.iedb.org/docs/tools/bcell_sequence/). For structure confidence, pass the actual PDB artifact from `fetch_structure` with `modelSource: "ALPHAFOLD_DB"` and `sourceStatus: "LIVE"`; [AlphaFold DB stores pLDDT in the PDB B-factor field](https://www.alphafold.ebi.ac.uk/faq). GraphBepi is fixture-only in this version. An MCP tool or exported research package is a computational artifact; it is not experimental or clinical validation.
 
 ## Repository map
 

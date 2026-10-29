@@ -28,7 +28,7 @@ Updated 2026-10-29. `npm run test:all-tools` calls all 46 examples through a sta
 | `validate_structure` | Parse actual PDB atoms/residues and chain | Live MCP call verified |
 | `map_epitopes_to_structure` | Align sequence to PDB coordinates | Live MCP call verified |
 | `calculate_surface_accessibility` | FreeSASA on actual PDB coordinates | Live MCP call verified |
-| `calculate_structure_confidence` | Summarize supplied confidence metrics | MCP example verified; not an independent confidence predictor |
+| `calculate_structure_confidence` | Extract AlphaFold PDB C-alpha pLDDT by residue and export JSON, or summarize supplied metrics | Live AlphaFold DB MCP call verified on P69905; supplied-metrics mode depends on caller provenance |
 | `detect_binding_pockets` | fpocket on actual PDB coordinates | Live MCP call verified |
 | `create_molstar_view` | Export HTML with actual coordinate data | Live MCP export verified |
 | `fetch_compound` | Query PubChem | Live MCP call verified |
@@ -55,7 +55,7 @@ Updated 2026-10-29. `npm run test:all-tools` calls all 46 examples through a sta
 
 1. GraphBepi requires an independently installed model/runtime and a validated output adapter. Its public repository documents Linux, historical Python/Torch versions, pretrained model downloads, and PDB/FASTA prediction commands; it is not bundled here. `predict_bcell` now has live IEDB BepiPred-3.0 inference, while Parker remains a hydrophilicity proxy.
 2. IEDB next-generation population coverage has a live MCP call with the World AFND dataset. The optional standalone and custom-service paths have not been live verified. Do not relabel the exact fixture or synthetic calculator as population evidence.
-3. Most ranking, confidence, constraint, and export tools consume supplied data. Their code executes real calculations/serialization, but the scientific quality of results follows the provenance and quality of those inputs.
+3. Most ranking, constraint, and export tools consume supplied data. Their code executes real calculations/serialization, but the scientific quality of results follows the provenance and quality of those inputs. AlphaFold pLDDT is local model confidence, not epitope confidence or experimental validation.
 4. A docking pose, contact, epitope prediction, or population estimate is computational evidence and needs independent scientific review and experimental validation.
 
-Run `scripts/verify-live-workflow.mts`, `scripts/verify-live-chemistry.mts`, `scripts/verify-live-population.mts`, and `scripts/verify-live-bcell.mts` for the newly added live call proofs. See [LIVE_WORKFLOWS.md](LIVE_WORKFLOWS.md) for the earlier PDB, PubChem, IEDB, Vina, PLIP, FreeSASA, fpocket, and Mol* proof chain.
+Run `scripts/verify-live-workflow.mts`, `scripts/verify-live-chemistry.mts`, `scripts/verify-live-population.mts`, `scripts/verify-live-bcell.mts`, and `scripts/verify-live-alphafold.mts` for the newly added live call proofs. See [LIVE_WORKFLOWS.md](LIVE_WORKFLOWS.md) for the PDB, PubChem, IEDB, Vina, PLIP, FreeSASA, fpocket, and Mol* proof chain.

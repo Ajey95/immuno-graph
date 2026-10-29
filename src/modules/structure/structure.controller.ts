@@ -170,6 +170,9 @@ const confidenceInput = z
     structureId: identifierSchema,
     sourceStatus,
     confidenceMetrics: z.record(z.string(), z.number().finite()).optional(),
+    modelSource: z.literal('ALPHAFOLD_DB').optional(),
+    structureArtifactRef: z.string().url().optional(),
+    structurePdbBase64: z.string().min(1).max(8_000_000).optional(),
   })
   .strict();
 const confidenceData = z
@@ -177,6 +180,15 @@ const confidenceData = z
     structureId: identifierSchema,
     confidenceScore: unitIntervalSchema,
     confidence: z.enum(['HIGH', 'MEDIUM', 'LOW']),
+    residueCount: z.number().int().positive().optional(),
+    lowConfidenceResidueCount: z.number().int().nonnegative().optional(),
+    residueScores: z.array(z.object({
+      chainId: identifierSchema,
+      residueNumber: z.number().int(),
+      insertionCode: z.string(),
+      plddt: z.number().min(0).max(100),
+    }).strict()).optional(),
+    artifact: inlineArtifactSchema.optional(),
     warnings: z.array(identifierSchema),
     provenance: connectorProvenanceSchema,
   })
@@ -603,7 +615,7 @@ export class StructureController {
 
   @Tool({
     name: 'calculate_structure_confidence',
-    description: 'Calculate structure confidence from provided metrics or fixture-safe defaults.',
+    description: 'Read per-residue AlphaFold pLDDT from supplied PDB bytes and export scores, or summarize supplied confidence metrics.',
     inputSchema: confidenceInput,
     examples: {
       request: { runId: 'run-1', structureId: 'fixture-structure-1', sourceStatus: 'FIXTURE' },
@@ -620,10 +632,55 @@ export class StructureController {
       dataSchema: confidenceData,
       context,
       operation: (value) => {
-        if (value.sourceStatus === 'LIVE' && Object.keys(value.confidenceMetrics ?? {}).length === 0) {
-          throw new ToolExecutionError('CONFIDENCE_METRICS_REQUIRED', 'VALIDATION', 'Live structure confidence requires measured confidence metrics.');
+        if (value.structurePdbBase64) {
+          if (value.sourceStatus !== 'LIVE' || value.modelSource !== 'ALPHAFOLD_DB' || value.confidenceMetrics) {
+            throw new ToolExecutionError('PLDDT_SOURCE_INVALID', 'VALIDATION', 'AlphaFold PDB confidence requires sourceStatus LIVE, modelSource ALPHAFOLD_DB, and no separate confidenceMetrics.');
+          }
+          if (value.structureArtifactRef) {
+            const source = new URL(value.structureArtifactRef);
+            if (source.protocol !== 'https:' || source.hostname !== 'alphafold.ebi.ac.uk' || !/^\/files\/AF-[A-Za-z0-9-]+-F1-model_v\d+\.pdb$/u.test(source.pathname)) {
+              throw new ToolExecutionError('PLDDT_SOURCE_INVALID', 'VALIDATION', 'AlphaFold PDB artifact reference must point to an AlphaFold DB model file.');
+            }
+          }
+          const pdb = decodeStructurePdb(value.structurePdbBase64);
+          const residueScores = parseAlphaFoldPlddt(pdb.toString('utf8'));
+          const meanPlddt = residueScores.reduce((sum, residue) => sum + residue.plddt, 0) / residueScores.length;
+          const score = meanPlddt / 100;
+          const lowConfidenceResidueCount = residueScores.filter((residue) => residue.plddt < 50).length;
+          const payload = JSON.stringify({
+            structureId: value.structureId,
+            method: 'alphafold-plddt',
+            meanPlddt,
+            residueScores,
+          }, null, 2);
+          const fileStem = value.structureId.replaceAll(/[^A-Za-z0-9._-]/gu, '_').slice(0, 120);
+          return {
+            structureId: value.structureId,
+            confidenceScore: score,
+            confidence: score >= 0.8 ? ('HIGH' as const) : score >= 0.5 ? ('MEDIUM' as const) : ('LOW' as const),
+            residueCount: residueScores.length,
+            lowConfidenceResidueCount,
+            residueScores,
+            artifact: inlineArtifact(`${value.runId}-${value.structureId}-plddt`, `${fileStem}-plddt.json`, 'application/json', `mcp://structure/${value.runId}/${fileStem}-plddt.json`, payload),
+            warnings: lowConfidenceResidueCount > 0 ? ['low-plddt-residues'] : [],
+            provenance: provenance('alphafold-plddt', 'calculate_structure_confidence', 'LIVE', {
+              structureId: value.structureId,
+              pdbSha256: createHash('sha256').update(pdb).digest('hex'),
+              residueCount: residueScores.length,
+              meanPlddt,
+            }, value.structureArtifactRef ?? 'https://alphafold.ebi.ac.uk/'),
+          };
+        }
+        if (value.modelSource || value.structureArtifactRef) {
+          throw new ToolExecutionError('PLDDT_PDB_REQUIRED', 'VALIDATION', 'AlphaFold pLDDT requires actual PDB bytes.');
+        }
+        if (value.sourceStatus !== 'FIXTURE' && Object.keys(value.confidenceMetrics ?? {}).length === 0) {
+          throw new ToolExecutionError('CONFIDENCE_METRICS_REQUIRED', 'VALIDATION', 'Non-fixture structure confidence requires actual confidence metrics or AlphaFold PDB bytes.');
         }
         const metricValues = Object.values(value.confidenceMetrics ?? {});
+        if (metricValues.some((metric) => metric < 0 || metric > 1)) {
+          throw new ToolExecutionError('CONFIDENCE_METRIC_RANGE_INVALID', 'VALIDATION', 'Supplied confidence metrics must be normalized to 0-1.');
+        }
         const score =
           metricValues.length === 0
             ? 0.65
@@ -643,7 +700,7 @@ export class StructureController {
               : score >= 0.5
                 ? ('MEDIUM' as const)
                 : ('LOW' as const),
-          warnings: value.sourceStatus === 'FIXTURE' ? ['fixture-confidence-not-live'] : [],
+          warnings: value.sourceStatus === 'FIXTURE' ? ['fixture-confidence-not-live'] : ['supplied-confidence-metrics-unverified'],
           provenance: provenance(
             'structure-confidence',
             'calculate_structure_confidence',
@@ -854,6 +911,38 @@ function extractPdbChainIds(contents: string): string[] {
     }
   }
   return [...ids].sort();
+}
+
+function parseAlphaFoldPlddt(contents: string): Array<{ chainId: string; residueNumber: number; insertionCode: string; plddt: number }> {
+  const lines = contents.split(/\r?\n/u);
+  if (!lines.some((line) => line.startsWith('TITLE ') && line.toUpperCase().includes('ALPHAFOLD'))) {
+    throw new ToolExecutionError('PLDDT_NOT_ALPHAFOLD_PDB', 'VALIDATION', 'pLDDT extraction requires an AlphaFold DB PDB file; experimental B-factors are not pLDDT.');
+  }
+  const residues = new Map<string, { chainId: string; residueNumber: number; insertionCode: string; plddt: number }>();
+  for (const line of lines) {
+    if (!line.startsWith('ATOM  ') || line.slice(12, 16).trim() !== 'CA') continue;
+    if (line.length < 66 || !line.slice(60, 66).trim()) {
+      throw new ToolExecutionError('PLDDT_PDB_INVALID', 'VALIDATION', 'AlphaFold PDB is missing a C-alpha pLDDT field.');
+    }
+    const alternateLocation = line[16];
+    if (alternateLocation !== ' ' && alternateLocation !== 'A') continue;
+    const chainId = line[21]?.trim() ?? '';
+    const residueNumber = Number(line.slice(22, 26).trim());
+    const insertionCode = line[26]?.trim() ?? '';
+    const plddt = Number(line.slice(60, 66).trim());
+    if (!chainId || !Number.isInteger(residueNumber) || !Number.isFinite(plddt) || plddt < 0 || plddt > 100) {
+      throw new ToolExecutionError('PLDDT_PDB_INVALID', 'VALIDATION', 'AlphaFold PDB has invalid C-alpha residue identifiers or pLDDT values.');
+    }
+    const key = `${chainId}:${residueNumber}:${insertionCode}`;
+    if (residues.has(key)) {
+      throw new ToolExecutionError('PLDDT_PDB_INVALID', 'VALIDATION', 'AlphaFold PDB repeats a C-alpha residue.');
+    }
+    residues.set(key, { chainId, residueNumber, insertionCode, plddt });
+  }
+  if (residues.size === 0) {
+    throw new ToolExecutionError('PLDDT_PDB_INVALID', 'VALIDATION', 'AlphaFold PDB contains no C-alpha residues with pLDDT.');
+  }
+  return [...residues.values()];
 }
 
 function stableUnitInterval(value: unknown): number {
