@@ -23,6 +23,11 @@ try {
   const listed = await client.listTools();
   assert.equal(listed.tools.length, 46);
   assert.deepEqual(new Set(listed.tools.map((tool) => tool.name)), new Set(handlers.map(({ options }) => options.name)));
+  for (const name of ['detect_overlapping_epitopes', 'remove_duplicate_candidates', 'validate_thresholds', 'categorize_candidates', 'apply_constraint_rules']) {
+    const tool = listed.tools.find((item) => item.name === name);
+    assert.equal(tool?.annotations?.readOnlyHint, true, `${name} must be marked read-only for LLM MCP hosts`);
+    assert.equal(tool?.annotations?.idempotentHint, true, `${name} must be marked idempotent for LLM MCP hosts`);
+  }
   for (const { group, options } of handlers) {
     const request = structuredClone((options.examples as { request: Record<string, unknown> }).request);
     const started = Date.now();

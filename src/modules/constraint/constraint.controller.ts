@@ -218,6 +218,7 @@ export class ConstraintController {
     name: 'detect_overlapping_epitopes',
     description:
       'Detect positional overlap competitors and connected components without resolving them.',
+    annotations: { readOnlyHint: true, idempotentHint: true },
     inputSchema: overlapInput,
     examples: {
       request: { runId: 'example-run', threshold: 0.8, candidates: [
@@ -243,6 +244,7 @@ export class ConstraintController {
     name: 'remove_duplicate_candidates',
     description:
       'Canonicalize exact duplicate identities while preserving identical peptides at different coordinates.',
+    annotations: { readOnlyHint: true, idempotentHint: true },
     inputSchema: duplicateInput,
     examples: {
       request: { runId: 'example-run', proteinHash: hash, candidates: [
@@ -269,6 +271,7 @@ export class ConstraintController {
   @Tool({
     name: 'validate_thresholds',
     description: 'Evaluate documented hard biological thresholds and emit rule outcomes.',
+    annotations: { readOnlyHint: true, idempotentHint: true },
     inputSchema: thresholdsInput,
     examples: {
       request: { runId: 'example-run', ruleProfileVersion: 'mvp-v1.0', candidates: [baseExample] },
@@ -299,6 +302,7 @@ export class ConstraintController {
     name: 'categorize_candidates',
     description:
       'Assign deterministic decision categories and confidence after scoring and constraints.',
+    annotations: { readOnlyHint: true, idempotentHint: true },
     inputSchema: categorizeInput,
     examples: {
       request: {
@@ -355,6 +359,7 @@ export class ConstraintController {
   @Tool({
     name: 'apply_constraint_rules',
     description: 'Apply base, duplicate, and overlap rules to one immutable candidate snapshot.',
+    annotations: { readOnlyHint: true, idempotentHint: true },
     inputSchema: applyInput,
     examples: {
       request: {

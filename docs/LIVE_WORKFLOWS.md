@@ -4,6 +4,8 @@ The 46 registered tools are not 46 live scientific integrations. `npm run test:a
 
 `npm run test:semantics` also calls all 46 documented examples through a standard MCP client. It checks each tool's intended output fields and behavior, verifies inline artifact lengths and SHA-256 hashes, and inspects the research ZIP's entries. These examples cover contract behavior; many deliberately use fixtures. The live verifier scripts below provide separate evidence for real provider and computation paths.
 
+A separate Codex LLM MCP client also called all 46 documented examples once each: 46 unique calls and 46 successful `ok` envelopes. Its first attempt exposed missing read-only annotations on five constraint calculations; those annotations are now present and asserted by `test:semantics`. The LLM example run used fixture and synthetic inputs where documented, so it does not replace live provider verification.
+
 ## Verified live path
 
 The MCP server has been exercised through a standard MCP client with these real operations:
