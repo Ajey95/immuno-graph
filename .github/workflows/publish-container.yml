@@ -45,3 +45,20 @@ jobs:
             org.opencontainers.image.source=https://github.com/Ajey95/immuno-graph
             org.opencontainers.image.version=${{ inputs.version }}
             org.opencontainers.image.licenses=MIT
+      - name: Smoke test the published container
+        env:
+          IMMUNOGRAPH_SMOKE_API_KEY: 0123456789abcdef0123456789abcdef
+        run: |
+          docker pull ghcr.io/ajey95/immuno-graph:${{ inputs.version }}
+          docker run -d --name immunograph-smoke -p 127.0.0.1:3000:3000 \
+            -e IMMUNOGRAPH_API_KEY="$IMMUNOGRAPH_SMOKE_API_KEY" \
+            -e IMMUNOGRAPH_ALLOWED_HOSTS=localhost,127.0.0.1 \
+            -e IMMUNOGRAPH_ALLOWED_ORIGINS=localhost,127.0.0.1 \
+            ghcr.io/ajey95/immuno-graph:${{ inputs.version }}
+          node scripts/smoke-container.mjs
+      - name: Container logs
+        if: failure()
+        run: docker logs immunograph-smoke || true
+      - name: Stop smoke container
+        if: always()
+        run: docker rm -f immunograph-smoke || true
