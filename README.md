@@ -1,8 +1,10 @@
 # ImmunoGraph MCP
 
 <p align="center">
-  <img src="docs/assets/immunograph-hero.svg" alt="ImmunoGraph MCP: from sequence to inspectable evidence, with a coordinate-based illustration of a computed 1IEP protein and imatinib docking pose." width="100%">
+  <img src="docs/assets/immunograph-hero-gpt.png" alt="Illustrative ImmunoGraph banner with a protein ribbon, molecular motif, and the words ImmunoGraph: MCP for inspectable research." width="100%">
 </p>
+
+<p align="center"><sub>Banner artwork is illustrative. <a href="#real-3d-outcomes">See coordinate-based 3D outcomes</a> below.</sub></p>
 
 <p align="center">
   <a href="https://github.com/Ajey95/immuno-graph/actions/workflows/ci.yml"><img alt="CI status" src="https://github.com/Ajey95/immuno-graph/actions/workflows/ci.yml/badge.svg?branch=main"></a>
