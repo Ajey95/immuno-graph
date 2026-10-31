@@ -27,6 +27,22 @@ try {
     new Set(listed.tools.map((tool) => tool.name)),
     new Set(handlers.map(({ options }) => options.name)),
   );
+  let documentedParameters = 0;
+  for (const tool of listed.tools) {
+    assert.ok((tool.description?.length ?? 0) >= 120, `${tool.name}: public purpose or usage is too brief`);
+    const properties = tool.inputSchema.properties ?? {};
+    for (const [name, schema] of Object.entries(properties)) {
+      assert.ok(
+        typeof schema === 'object' && schema !== null && 'description' in schema &&
+          typeof schema.description === 'string' && schema.description.length >= 20,
+        `${tool.name}.${name}: missing parameter guidance`,
+      );
+      documentedParameters += 1;
+    }
+    assert.ok(tool.outputSchema?.properties?.ok, `${tool.name}: missing structured result schema`);
+    assert.ok(tool.outputSchema?.properties?.meta, `${tool.name}: missing provenance schema`);
+  }
+  console.log(JSON.stringify({ documentedParameters }));
   console.log(JSON.stringify({ listed: listed.tools.length }));
   for (const { group, options } of handlers) {
       const request = structuredClone((options.examples as { request: Record<string, unknown> }).request);

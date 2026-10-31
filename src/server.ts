@@ -7,6 +7,7 @@ import { createToolGroups } from './modules/tool-catalog.js';
 import { ReportController } from './modules/report/report.controller.js';
 import { registeredHandlers } from './modules/common/mcp-compat.js';
 import type { ExecutionContext } from './modules/common/mcp-compat.js';
+import { publicToolDefinition } from './modules/tool-public-docs.js';
 
 const logger: ExecutionContext['logger'] = {
   info: (event, details) => console.error(JSON.stringify({ level: 'info', event, ...details })),
@@ -38,11 +39,13 @@ export function createServer(): McpServer {
       const handler = group.controller[method];
       if (typeof handler !== 'function') throw new Error(`Missing handler: ${method}`);
       handlers.set(options.name, (input, context) => Promise.resolve(handler.call(group.controller, input, context)));
+      const publicDefinition = publicToolDefinition(options);
       server.registerTool(
         options.name,
         {
-          description: options.description,
-          inputSchema: options.inputSchema,
+          description: publicDefinition.description,
+          inputSchema: publicDefinition.inputSchema,
+          outputSchema: publicDefinition.outputSchema,
           annotations: options.annotations,
         },
         async (input, context) => {
