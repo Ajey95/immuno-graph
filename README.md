@@ -232,7 +232,14 @@ docker run --rm -p 3000:3000 \
   ghcr.io/ajey95/immuno-graph:0.2.0
 ```
 
-The [v0.2.0 source release](https://github.com/Ajey95/immuno-graph/releases/tag/v0.2.0) and `ghcr.io/ajey95/immuno-graph:0.2.0` container image are public. The [MCP Registry manifest](server.json) validates against the official registry schema. npm and MCP Registry publication are pending npm account authentication; use the source or container release meanwhile.
+The [v0.2.0 source release](https://github.com/Ajey95/immuno-graph/releases/tag/v0.2.0), [installable npm tarball asset](https://github.com/Ajey95/immuno-graph/releases/download/v0.2.0/immunograph-mcp-0.2.0.tgz), and `ghcr.io/ajey95/immuno-graph:0.2.0` container image are public. The [official MCP Registry listing](https://registry.modelcontextprotocol.io/v0/servers/io.github.Ajey95%2Fimmunograph/versions/0.2.0) points to the OCI image and invokes its stdio entry point. To install the tarball directly from GitHub, run:
+
+```bash
+npm install --global https://github.com/Ajey95/immuno-graph/releases/download/v0.2.0/immunograph-mcp-0.2.0.tgz
+immunograph-mcp
+```
+
+The GitHub tarball has SHA-256 `D2CE7D266A9C52DD7080E7CCF12C3E31E718B0C2BE1F7327714E12E9EC8B7925`. It was installed from the public release URL and passed standard MCP client tests. The `immunograph-mcp` name on npm itself remains unpublished pending account authentication.
 
 ## MCP usage
 

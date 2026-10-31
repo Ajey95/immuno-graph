@@ -10,9 +10,10 @@ Release status for v0.2.0. Checkmarks reflect verified outcomes, not merely prep
 - [x] Confirm `npm pack --dry-run` contains the compiled server, `data/`, license, and docs.
 - [x] Install the generated npm tarball in a clean directory and confirm a standard MCP client discovers 46 tools and calls `validate_sequence` successfully.
 - [x] Confirm `package.json` `mcpName` matches `server.json` and validate the registry manifest against the official schema.
-- [ ] Publish the first `immunograph-mcp` npm package and verify installation from npm.
+- [ ] Publish the first `immunograph-mcp` package to npm after account authentication and verify installation from the npm registry.
+- [x] Attach the versioned npm tarball to the [GitHub release](https://github.com/Ajey95/immuno-graph/releases/tag/v0.2.0); download it, verify SHA-256, install from its public URL, and call it through a standard MCP client.
 - [x] Create a matching [GitHub release](https://github.com/Ajey95/immuno-graph/releases/tag/v0.2.0) and publish a [traceable container image](https://github.com/Ajey95/immuno-graph/pkgs/container/immuno-graph).
-- [ ] Register the published package in the official MCP Registry, then verify the listing.
-- [ ] Replace source-only installation instructions with exact published versions and URLs.
+- [x] Register the public OCI image in the [official MCP Registry](https://registry.modelcontextprotocol.io/v0/servers/io.github.Ajey95%2Fimmunograph/versions/0.2.0), then verify its active listing through the public API.
+- [x] Replace source-only installation instructions with exact published versions and URLs.
 
 No live connector or experimental scientific validation is implied by a software release.

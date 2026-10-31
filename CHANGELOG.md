@@ -12,4 +12,4 @@
 - Verify all 46 documented examples through an LLM MCP host and an independent semantic audit, including artifact hashes and fixture provenance.
 - Include PLIP pi-stacking contacts in the structured interaction result; previously the raw XML contained them but the normalized list omitted them.
 
-The source release and container image are published. npm and MCP Registry publication are pending npm account authentication.
+The source release, installable GitHub tarball, container image, and OCI-backed MCP Registry listing are published. Direct publication of the `immunograph-mcp` name on npm remains pending account authentication.
