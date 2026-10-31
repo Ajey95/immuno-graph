@@ -1,7 +1,7 @@
 # ImmunoGraph MCP
 
 <p align="center">
-  <img src="docs/assets/immunograph-hero.svg" alt="ImmunoGraph connects protein sequences to research evidence, docking poses, three-dimensional viewers, and exports through one MCP server." width="100%">
+  <img src="docs/assets/immunograph-hero.svg" alt="ImmunoGraph MCP: from sequence to inspectable evidence, with a coordinate-based illustration of a computed 1IEP protein and imatinib docking pose." width="100%">
 </p>
 
 <p align="center">
