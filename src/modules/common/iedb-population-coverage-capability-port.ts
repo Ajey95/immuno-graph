@@ -108,9 +108,71 @@ export class IedbPopulationCoverageCapabilityPort implements CapabilityPort {
       );
     }
     if (this.options.url !== undefined) {
+      if (this.options.url.endsWith('/api/v1/pipeline')) {
+        return this.calculateNextgen(input as PopulationCoverageInput, this.options.url);
+      }
       return this.calculateHttp(input as PopulationCoverageInput, this.options.url);
     }
     return this.calculateStandalone(input as PopulationCoverageInput, this.options.scriptPath);
+  }
+
+  private async calculateNextgen(input: PopulationCoverageInput, endpoint: string) {
+    if (input.associations.length === 0 || input.populationIds.length === 0) {
+      throw new ToolExecutionError('IEDB_POPULATION_COVERAGE_INPUT_EMPTY', 'VALIDATION', 'At least one HLA association and target population is required.');
+    }
+    if (input.associations.some((association) => !association.peptide?.trim())) {
+      throw new ToolExecutionError('IEDB_POPULATION_COVERAGE_PEPTIDE_REQUIRED', 'VALIDATION', 'The IEDB API requires peptide text for each HLA association.');
+    }
+    const body = {
+      pipeline_title: `ImmunoGraph ${input.runId}`,
+      run_stage_range: [1, 1],
+      stages: [{
+        stage_number: 1,
+        stage_type: 'prediction',
+        tool_group: 'population_coverage',
+        epitope_alleles: formatStandaloneInput(input.associations),
+        input_parameters: {
+          populations: input.populationIds,
+          data_source: 'afnd',
+          population_grouping: 'geographic',
+        },
+      }],
+    };
+    const submitted = JSON.parse(await this.post(endpoint, JSON.stringify(body))) as Record<string, unknown>;
+    if (Array.isArray(submitted.errors) && submitted.errors.length > 0) {
+      throw new ToolExecutionError('IEDB_POPULATION_COVERAGE_JOB_REJECTED', 'CONNECTOR', String(submitted.errors[0]));
+    }
+    const resultUri = submitted.results_uri;
+    const origin = new URL(endpoint).origin;
+    if (typeof resultUri !== 'string' || !resultUri.startsWith(`${origin}/api/v1/results/`)) invalidResponse();
+    const deadline = Date.now() + this.timeoutMs;
+    let result: Record<string, unknown> | undefined;
+    while (Date.now() < deadline) {
+      result = JSON.parse(await this.get(resultUri)) as Record<string, unknown>;
+      if (result.status === 'done') break;
+      if (result.status === 'failed' || result.status === 'error') {
+        throw new ToolExecutionError('IEDB_POPULATION_COVERAGE_JOB_FAILED', 'CONNECTOR', 'IEDB population coverage job failed.');
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+    }
+    if (result?.status !== 'done') throw new ToolExecutionError('IEDB_POPULATION_COVERAGE_TIMEOUT', 'TIMEOUT', 'IEDB population coverage job timed out.', true);
+    const parsed = parseNextgenOutput(result, input.classMode);
+    return {
+      projectedCoverage: parsed.projectedCoverage,
+      metrics: { averageHits: parsed.averageHits, pc90: parsed.pc90, populations: parsed.populations, resultUri },
+      provenance: {
+        connectorId: CONNECTOR_ID,
+        connectorVersion: 'iedb-nextgen-api-v1',
+        method: METHOD,
+        methodVersion: 'v1',
+        status: 'LIVE' as const,
+        sourceUri: endpoint,
+        parameters: { classMode: input.classMode, populationIds: input.populationIds, associationCount: input.associations.length, dataSource: 'afnd' },
+        predictionSource: 'LIVE' as const,
+        scientificUse: true,
+        validationStatus: 'SCIENTIFIC' as const,
+      },
+    };
   }
 
   private async calculateHttp(input: PopulationCoverageInput, endpoint: string) {
@@ -297,6 +359,59 @@ export class IedbPopulationCoverageCapabilityPort implements CapabilityPort {
     if (Buffer.byteLength(text, 'utf8') > this.maximumResponseBytes) responseTooLarge();
     return text;
   }
+
+  private async get(endpoint: string): Promise<string> {
+    let response: Response;
+    try {
+      response = await this.request(endpoint, { method: 'GET', headers: { accept: 'application/json' }, redirect: 'error', signal: AbortSignal.timeout(this.timeoutMs) });
+    } catch {
+      throw new ToolExecutionError('IEDB_POPULATION_COVERAGE_NETWORK_ERROR', 'CONNECTOR', 'IEDB result polling failed.', true);
+    }
+    if (!response.ok) throw new ToolExecutionError('IEDB_POPULATION_COVERAGE_HTTP_ERROR', 'CONNECTOR', `IEDB result polling returned HTTP ${response.status}.`, response.status >= 500);
+    const declaredLength = Number(response.headers.get('content-length') ?? 0);
+    if (declaredLength > this.maximumResponseBytes) responseTooLarge();
+    const body = await response.text();
+    if (Buffer.byteLength(body, 'utf8') > this.maximumResponseBytes) responseTooLarge();
+    return body;
+  }
+}
+
+function parseNextgenOutput(result: Record<string, unknown>, mode: PopulationCoverageInput['classMode']) {
+  const data = result.data as Record<string, unknown> | undefined;
+  if (Array.isArray(data?.errors) && data.errors.length > 0) {
+    throw new ToolExecutionError('IEDB_POPULATION_COVERAGE_JOB_FAILED', 'CONNECTOR', String(data.errors[0]));
+  }
+  const results = data?.results;
+  if (!Array.isArray(results)) invalidResponse();
+  const summary = results.find((item) => typeof item === 'object' && item !== null && (item as Record<string, unknown>).type === 'population_coverage_summary_table') as Record<string, unknown> | undefined;
+  const columns = summary?.table_columns;
+  const rows = summary?.table_data;
+  if (!Array.isArray(columns) || !Array.isArray(rows)) invalidResponse();
+  const columnNames = columns.map((column) => (column as Record<string, unknown>).name);
+  const index = (name: string) => { const found = columnNames.indexOf(name); if (found < 0) invalidResponse(); return found; };
+  const populationIndex = index('population');
+  const classIndex = index('mhc_class');
+  const coverageIndex = index('coverage');
+  const hitsIndex = index('average_hit');
+  const pc90Index = index('pc90');
+  const className = mode === 'CLASS_I' ? 'I' : mode === 'CLASS_II' ? 'II' : 'combined';
+  const populations = rows.filter((row): row is unknown[] => Array.isArray(row) && row[classIndex] === className).map((row) => ({
+    populationId: String(row[populationIndex]),
+    projectedCoverage: coverageColumn(row[coverageIndex]),
+    averageHits: requiredNonnegative(row[hitsIndex]),
+    pc90: requiredNonnegative(row[pc90Index]),
+  }));
+  if (populations.length === 0) invalidResponse();
+  return {
+    projectedCoverage: average(populations.map((item) => item.projectedCoverage)),
+    averageHits: average(populations.map((item) => item.averageHits)),
+    pc90: average(populations.map((item) => item.pc90)),
+    populations,
+  };
+}
+
+function requiredNonnegative(value: unknown): number {
+  return optionalNonnegative(value) ?? invalidResponse();
 }
 
 async function runCommand(

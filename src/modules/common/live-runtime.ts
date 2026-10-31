@@ -19,7 +19,7 @@ export interface LiveToolRuntime {
 
 export const defaultLiveToolRuntime: LiveToolRuntime = {
   async fetchText(url) {
-    const response = await fetch(url);
+    const response = await fetch(url, { signal: AbortSignal.timeout(30_000) });
     if (!response.ok) {
       throw new ToolExecutionError(
         'LIVE_HTTP_REQUEST_FAILED',
@@ -29,10 +29,14 @@ export const defaultLiveToolRuntime: LiveToolRuntime = {
         { url, status: response.status },
       );
     }
-    return response.text();
+    const text = await response.text();
+    if (Buffer.byteLength(text, 'utf8') > 5_000_000) {
+      throw new ToolExecutionError('LIVE_RESPONSE_TOO_LARGE', 'CONNECTOR', 'Live text response exceeds 5 MB.');
+    }
+    return text;
   },
   async fetchJson(url) {
-    const response = await fetch(url);
+    const response = await fetch(url, { signal: AbortSignal.timeout(30_000) });
     if (!response.ok) {
       throw new ToolExecutionError(
         'LIVE_HTTP_REQUEST_FAILED',

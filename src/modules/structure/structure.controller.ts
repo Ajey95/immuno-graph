@@ -1,6 +1,12 @@
+import { createHash } from 'node:crypto';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { canonicalJsonSha256 } from '../../lib/algorithms/index.js';
-import { ControllerDecorator, ToolDecorator as Tool } from '@nitrostack/core';
-import type { ExecutionContext } from '@nitrostack/core';
+import { ControllerDecorator, ToolDecorator as Tool } from '../common/mcp-compat.js';
+import type { ExecutionContext } from '../common/mcp-compat.js';
 import { z } from 'zod';
 
 import {
@@ -10,6 +16,7 @@ import {
   unitIntervalSchema,
 } from '../common/contracts.js';
 import { executeTool, ToolExecutionError } from '../common/executor.js';
+import { inlineArtifact, inlineArtifactSchema } from '../common/inline-artifact.js';
 import { defaultLiveToolRuntime, type LiveToolRuntime } from '../common/live-runtime.js';
 import { loadMcpEnvironment } from '../config/environment.js';
 
@@ -42,6 +49,7 @@ const structureRecord = z
     format: z.enum(['PDB', 'MMCIF', 'PAE_JSON', 'FIXTURE_JSON']),
     chainIds: z.array(identifierSchema),
     artifactRef: identifierSchema,
+    artifact: inlineArtifactSchema.optional(),
     scientificUse: z.boolean(),
     validationStatus: z.enum(['SCIENTIFIC', 'DEMONSTRATION_ONLY', 'VERIFIED_FIXTURE']),
   })
@@ -58,6 +66,7 @@ const validateStructureInput = z
     chainIds: z.array(identifierSchema).min(1),
     residueCount: z.number().int().positive(),
     sourceStatus,
+    structurePdbBase64: z.string().min(1).max(8_000_000).optional(),
   })
   .strict();
 const validateStructureData = z
@@ -95,6 +104,8 @@ const epitopeMappingInput = z
       )
       .min(1),
     mappingMode: z.enum(['DIRECT_COORDINATE', 'FIXTURE']),
+    referenceSequence: z.string().regex(/^[A-Za-z]+$/u).optional(),
+    structurePdbBase64: z.string().min(1).max(8_000_000).optional(),
   })
   .strict();
 const epitopeMappingData = z
@@ -120,6 +131,7 @@ const accessibilityInput = z
   .object({
     runId: identifierSchema,
     method: identifierSchema,
+    structurePdbBase64: z.string().min(1).max(8_000_000).optional(),
     mappings: z
       .array(
         z
@@ -147,6 +159,7 @@ const accessibilityData = z
         })
         .strict(),
     ),
+    artifacts: z.array(inlineArtifactSchema).optional(),
     provenance: connectorProvenanceSchema,
   })
   .strict();
@@ -156,7 +169,10 @@ const confidenceInput = z
     runId: identifierSchema,
     structureId: identifierSchema,
     sourceStatus,
-    confidenceMetrics: z.record(z.number().finite()).optional(),
+    confidenceMetrics: z.record(z.string(), z.number().finite()).optional(),
+    modelSource: z.literal('ALPHAFOLD_DB').optional(),
+    structureArtifactRef: z.string().url().optional(),
+    structurePdbBase64: z.string().min(1).max(8_000_000).optional(),
   })
   .strict();
 const confidenceData = z
@@ -164,6 +180,15 @@ const confidenceData = z
     structureId: identifierSchema,
     confidenceScore: unitIntervalSchema,
     confidence: z.enum(['HIGH', 'MEDIUM', 'LOW']),
+    residueCount: z.number().int().positive().optional(),
+    lowConfidenceResidueCount: z.number().int().nonnegative().optional(),
+    residueScores: z.array(z.object({
+      chainId: identifierSchema,
+      residueNumber: z.number().int(),
+      insertionCode: z.string(),
+      plddt: z.number().min(0).max(100),
+    }).strict()).optional(),
+    artifact: inlineArtifactSchema.optional(),
     warnings: z.array(identifierSchema),
     provenance: connectorProvenanceSchema,
   })
@@ -175,6 +200,7 @@ const pocketInput = z
     structureId: identifierSchema,
     structureArtifactRef: identifierSchema,
     method: z.enum(['fpocket', 'fixture-pocket-detector']),
+    structurePdbBase64: z.string().min(1).max(8_000_000).optional(),
   })
   .strict();
 const pocketData = z
@@ -197,6 +223,7 @@ const pocketData = z
         })
         .strict(),
     ),
+    artifacts: z.array(inlineArtifactSchema).optional(),
     provenance: connectorProvenanceSchema,
   })
   .strict();
@@ -208,6 +235,8 @@ const molstarInput = z
     structureArtifactRef: identifierSchema,
     ligandArtifactRef: identifierSchema.optional(),
     mode: z.enum(['STRUCTURE', 'DOCKING']),
+    structurePdbBase64: z.string().min(1).max(8_000_000).optional(),
+    ligandPdbBase64: z.string().min(1).max(8_000_000).optional(),
   })
   .strict();
 const molstarData = z
@@ -224,6 +253,7 @@ const molstarData = z
         scientificUse: z.boolean(),
       })
       .strict(),
+    artifact: inlineArtifactSchema.optional(),
     provenance: connectorProvenanceSchema,
   })
   .strict();
@@ -335,6 +365,13 @@ export class StructureController {
           );
     }
     const chainIds = extractPdbChainIds(contents);
+    if (chainIds.length === 0) {
+      throw new ToolExecutionError(
+        'LIVE_STRUCTURE_INVALID',
+        'CONNECTOR',
+        'The downloaded structure has no PDB atom records with chain IDs.',
+      );
+    }
     const connectorId = value.source === 'RCSB_PDB' ? 'rcsb-pdb' : 'alphafold-db';
     return {
       structure: {
@@ -344,8 +381,15 @@ export class StructureController {
         accession: value.accession,
         sourceStatus: 'LIVE' as const,
         format: 'PDB' as const,
-        chainIds: chainIds.length > 0 ? chainIds : ['A'],
+        chainIds,
         artifactRef,
+        artifact: inlineArtifact(
+          `${value.runId}-${value.accession}-structure`,
+          `${value.accession}.pdb`,
+          'chemical/x-pdb',
+          artifactRef,
+          contents,
+        ),
         scientificUse: true,
         validationStatus: 'SCIENTIFIC' as const,
       },
@@ -378,35 +422,47 @@ export class StructureController {
       inputSchema: validateStructureInput,
       dataSchema: validateStructureData,
       context,
-      operation: (value) => ({
-        structureId: value.structureId,
-        valid: value.residueCount > 0 && value.chainIds.length > 0,
-        warnings: value.sourceStatus === 'FIXTURE' ? ['fixture-structure-not-live'] : [],
-        checks: [
-          {
-            checkId: 'STRUCTURE-CHAIN-001',
-            status: 'PASS' as const,
-            message: 'At least one chain is present.',
-          },
-          {
-            checkId: 'STRUCTURE-RESIDUE-001',
-            status: 'PASS' as const,
-            message: 'Residue count is positive.',
-          },
-        ],
-        provenance: provenance(
-          'structure-validator',
-          'validate_structure',
-          value.sourceStatus,
-          value,
-        ),
-      }),
+      operation: (value) => {
+        if (value.sourceStatus === 'LIVE') {
+          if (value.format !== 'PDB' || !value.structurePdbBase64) {
+            throw new ToolExecutionError('STRUCTURE_PDB_REQUIRED', 'VALIDATION', 'Live validation requires actual PDB bytes.');
+          }
+          const pdb = decodeStructurePdb(value.structurePdbBase64);
+          const proteinAtoms = pdb.toString('utf8').split(/\r?\n/u).filter((line) => line.startsWith('ATOM  '));
+          const actualChains = new Set(proteinAtoms.map((line) => line[21] ?? ''));
+          const residues = new Set(proteinAtoms.map((line) => `${line[21]}:${line.slice(22, 27)}`));
+          const chainsPresent = value.chainIds.every((chain) => actualChains.has(chain));
+          const countMatches = value.residueCount === residues.size;
+          return {
+            structureId: value.structureId,
+            valid: chainsPresent && countMatches,
+            warnings: countMatches ? [] : [`residue-count-mismatch-${residues.size}`],
+            checks: [
+              { checkId: 'STRUCTURE-CHAIN-001', status: chainsPresent ? 'PASS' as const : 'FAIL' as const, message: chainsPresent ? 'Requested chains are present in PDB atom records.' : 'A requested chain is absent.' },
+              { checkId: 'STRUCTURE-RESIDUE-001', status: countMatches ? 'PASS' as const : 'FAIL' as const, message: `Observed ${residues.size} protein residues; supplied ${value.residueCount}.` },
+            ],
+            provenance: provenance('pdb-structure-validator', 'validate_structure', 'LIVE', {
+              pdbSha256: createHash('sha256').update(pdb).digest('hex'), observedResidueCount: residues.size,
+            }),
+          };
+        }
+        return {
+          structureId: value.structureId,
+          valid: value.residueCount > 0 && value.chainIds.length > 0,
+          warnings: ['fixture-structure-not-live'],
+          checks: [
+            { checkId: 'STRUCTURE-CHAIN-001', status: 'PASS' as const, message: 'At least one chain is present.' },
+            { checkId: 'STRUCTURE-RESIDUE-001', status: 'PASS' as const, message: 'Residue count is positive.' },
+          ],
+          provenance: provenance('structure-validator', 'validate_structure', 'FIXTURE', value),
+        };
+      },
     });
   }
 
   @Tool({
     name: 'map_epitopes_to_structure',
-    description: 'Map epitope candidate coordinates to a validated structure reference.',
+    description: 'Align a reference sequence to actual PDB coordinates and map candidate residues, or replay an explicit fixture.',
     inputSchema: epitopeMappingInput,
     examples: {
       request: {
@@ -427,8 +483,39 @@ export class StructureController {
       inputSchema: epitopeMappingInput,
       dataSchema: epitopeMappingData,
       context,
-      operation: (value) => ({
-        mappings: value.candidates.map((candidate) => ({
+      operation: async (value) => {
+        if (value.mappingMode === 'DIRECT_COORDINATE') {
+          if (!value.referenceSequence || !value.structurePdbBase64) {
+            throw new ToolExecutionError('STRUCTURE_MAPPING_INPUT_REQUIRED', 'VALIDATION', 'Direct mapping requires reference sequence and actual PDB bytes.');
+          }
+          const pdb = decodeStructurePdb(value.structurePdbBase64);
+          const directory = await mkdtemp(join(tmpdir(), 'immunograph-map-'));
+          try {
+            const pdbPath = join(directory, 'structure.pdb');
+            const requestPath = join(directory, 'request.json');
+            const outputPath = join(directory, 'mapping.json');
+            await Promise.all([
+              writeFile(pdbPath, pdb),
+              writeFile(requestPath, JSON.stringify({ referenceSequence: value.referenceSequence, candidates: value.candidates })),
+            ]);
+            const environment = loadMcpEnvironment();
+            const script = fileURLToPath(new URL('../../../scripts/live/map_structure.py', import.meta.url));
+            await this.runtime.runCommand(environment.SCIENTIFIC_PYTHON_COMMAND, [script, pdbPath, requestPath, outputPath]);
+            const result = JSON.parse(await readFile(outputPath, 'utf8')) as { mappings: Array<z.infer<typeof epitopeMappingData>['mappings'][number]> };
+            return {
+              mappings: result.mappings.map((mapping) => ({ ...mapping, structureId: value.structureId })),
+              provenance: provenance('biopython-align', 'map_epitopes_to_structure', 'LIVE', {
+                structureId: value.structureId,
+                pdbSha256: createHash('sha256').update(pdb).digest('hex'),
+                referenceSequenceSha256: createHash('sha256').update(value.referenceSequence).digest('hex'),
+                candidateCount: value.candidates.length,
+              }),
+            };
+          } finally {
+            await rm(directory, { recursive: true, force: true });
+          }
+        }
+        return { mappings: value.candidates.map((candidate) => ({
           candidateId: candidate.candidateId,
           structureId: value.structureId,
           chainId: candidate.chainId ?? 'A',
@@ -438,13 +525,14 @@ export class StructureController {
           confidence: value.mappingMode === 'FIXTURE' ? 0.7 : 0.85,
         })),
         provenance: provenance('structure-mapper', 'map_epitopes_to_structure', 'FIXTURE', value),
-      }),
+        };
+      },
     });
   }
 
   @Tool({
     name: 'calculate_surface_accessibility',
-    description: 'Calculate fixture-safe surface accessibility summaries for mapped candidates.',
+    description: 'Calculate relative solvent accessibility from actual PDB coordinates using FreeSASA, or replay an explicit fixture.',
     inputSchema: accessibilityInput,
     examples: {
       request: {
@@ -474,23 +562,43 @@ export class StructureController {
       context,
       operation: async (value) => {
         const environment = loadMcpEnvironment();
-        if (value.method === 'freesasa' && (environment.FREESASA_ENABLED || this.runtimeInjected)) {
-          const command = process.env.FREESASA_COMMAND ?? 'freesasa';
-          const result = await this.runtime.runCommand(command, [
-            value.mappings[0]?.structureId ?? 'structure.pdb',
-            '--mappings',
-            JSON.stringify(value.mappings),
-          ]);
-          const score = parseFirstUnitInterval(result.stdout);
-          return {
-            accessibility: value.mappings.map((mapping) => ({
-              candidateId: mapping.candidateId,
-              surfaceAccessibility: score,
-              method: value.method,
-              status: 'CALCULATED' as const,
-            })),
-            provenance: provenance('freesasa', value.method, 'LIVE', value),
-          };
+        if (value.method === 'freesasa') {
+          if (!environment.FREESASA_ENABLED && !this.runtimeInjected) {
+            throw new ToolExecutionError('FREESASA_NOT_CONFIGURED', 'CONNECTOR', 'FreeSASA is not enabled.');
+          }
+          if (!value.structurePdbBase64) {
+            throw new ToolExecutionError('FREESASA_STRUCTURE_REQUIRED', 'VALIDATION', 'FreeSASA requires actual PDB bytes.');
+          }
+          const pdb = decodeStructurePdb(value.structurePdbBase64);
+          const directory = await mkdtemp(join(tmpdir(), 'immunograph-sasa-'));
+          try {
+            const pdbPath = join(directory, 'structure.pdb');
+            const requestPath = join(directory, 'request.json');
+            const outputPath = join(directory, 'accessibility.json');
+            await Promise.all([
+              writeFile(pdbPath, pdb),
+              writeFile(requestPath, JSON.stringify({ mappings: value.mappings })),
+            ]);
+            const script = fileURLToPath(new URL('../../../scripts/live/calculate_sasa.py', import.meta.url));
+            await this.runtime.runCommand(environment.SCIENTIFIC_PYTHON_COMMAND, [script, pdbPath, requestPath, outputPath]);
+            const result = JSON.parse(await readFile(outputPath, 'utf8')) as {
+              accessibility: Array<{ candidateId: string; surfaceAccessibility: number; method: string; status: 'CALCULATED' }>;
+              perResidue: unknown;
+            };
+            return {
+              accessibility: result.accessibility,
+              artifacts: [inlineArtifact(`${value.runId}-sasa`, 'sasa-residues.json', 'application/json', `mcp://structure/${value.runId}/sasa-residues.json`, JSON.stringify(result.perResidue))],
+              provenance: provenance('freesasa', 'calculate_surface_accessibility', 'LIVE', {
+                pdbSha256: createHash('sha256').update(pdb).digest('hex'),
+                mappingCount: value.mappings.length,
+              }),
+            };
+          } finally {
+            await rm(directory, { recursive: true, force: true });
+          }
+        }
+        if (value.method !== 'fixture-accessibility') {
+          throw new ToolExecutionError('ACCESSIBILITY_METHOD_UNSUPPORTED', 'VALIDATION', 'Use freesasa or explicit fixture accessibility.');
         }
         return {
           accessibility: value.mappings.map((mapping) => ({
@@ -507,7 +615,7 @@ export class StructureController {
 
   @Tool({
     name: 'calculate_structure_confidence',
-    description: 'Calculate structure confidence from provided metrics or fixture-safe defaults.',
+    description: 'Read per-residue AlphaFold pLDDT from supplied PDB bytes and export scores, or summarize supplied confidence metrics.',
     inputSchema: confidenceInput,
     examples: {
       request: { runId: 'run-1', structureId: 'fixture-structure-1', sourceStatus: 'FIXTURE' },
@@ -524,7 +632,55 @@ export class StructureController {
       dataSchema: confidenceData,
       context,
       operation: (value) => {
+        if (value.structurePdbBase64) {
+          if (value.sourceStatus !== 'LIVE' || value.modelSource !== 'ALPHAFOLD_DB' || value.confidenceMetrics) {
+            throw new ToolExecutionError('PLDDT_SOURCE_INVALID', 'VALIDATION', 'AlphaFold PDB confidence requires sourceStatus LIVE, modelSource ALPHAFOLD_DB, and no separate confidenceMetrics.');
+          }
+          if (value.structureArtifactRef) {
+            const source = new URL(value.structureArtifactRef);
+            if (source.protocol !== 'https:' || source.hostname !== 'alphafold.ebi.ac.uk' || !/^\/files\/AF-[A-Za-z0-9-]+-F1-model_v\d+\.pdb$/u.test(source.pathname)) {
+              throw new ToolExecutionError('PLDDT_SOURCE_INVALID', 'VALIDATION', 'AlphaFold PDB artifact reference must point to an AlphaFold DB model file.');
+            }
+          }
+          const pdb = decodeStructurePdb(value.structurePdbBase64);
+          const residueScores = parseAlphaFoldPlddt(pdb.toString('utf8'));
+          const meanPlddt = residueScores.reduce((sum, residue) => sum + residue.plddt, 0) / residueScores.length;
+          const score = meanPlddt / 100;
+          const lowConfidenceResidueCount = residueScores.filter((residue) => residue.plddt < 50).length;
+          const payload = JSON.stringify({
+            structureId: value.structureId,
+            method: 'alphafold-plddt',
+            meanPlddt,
+            residueScores,
+          }, null, 2);
+          const fileStem = value.structureId.replaceAll(/[^A-Za-z0-9._-]/gu, '_').slice(0, 120);
+          return {
+            structureId: value.structureId,
+            confidenceScore: score,
+            confidence: score >= 0.8 ? ('HIGH' as const) : score >= 0.5 ? ('MEDIUM' as const) : ('LOW' as const),
+            residueCount: residueScores.length,
+            lowConfidenceResidueCount,
+            residueScores,
+            artifact: inlineArtifact(`${value.runId}-${value.structureId}-plddt`, `${fileStem}-plddt.json`, 'application/json', `mcp://structure/${value.runId}/${fileStem}-plddt.json`, payload),
+            warnings: lowConfidenceResidueCount > 0 ? ['low-plddt-residues'] : [],
+            provenance: provenance('alphafold-plddt', 'calculate_structure_confidence', 'LIVE', {
+              structureId: value.structureId,
+              pdbSha256: createHash('sha256').update(pdb).digest('hex'),
+              residueCount: residueScores.length,
+              meanPlddt,
+            }, value.structureArtifactRef ?? 'https://alphafold.ebi.ac.uk/'),
+          };
+        }
+        if (value.modelSource || value.structureArtifactRef) {
+          throw new ToolExecutionError('PLDDT_PDB_REQUIRED', 'VALIDATION', 'AlphaFold pLDDT requires actual PDB bytes.');
+        }
+        if (value.sourceStatus !== 'FIXTURE' && Object.keys(value.confidenceMetrics ?? {}).length === 0) {
+          throw new ToolExecutionError('CONFIDENCE_METRICS_REQUIRED', 'VALIDATION', 'Non-fixture structure confidence requires actual confidence metrics or AlphaFold PDB bytes.');
+        }
         const metricValues = Object.values(value.confidenceMetrics ?? {});
+        if (metricValues.some((metric) => metric < 0 || metric > 1)) {
+          throw new ToolExecutionError('CONFIDENCE_METRIC_RANGE_INVALID', 'VALIDATION', 'Supplied confidence metrics must be normalized to 0-1.');
+        }
         const score =
           metricValues.length === 0
             ? 0.65
@@ -544,7 +700,7 @@ export class StructureController {
               : score >= 0.5
                 ? ('MEDIUM' as const)
                 : ('LOW' as const),
-          warnings: value.sourceStatus === 'FIXTURE' ? ['fixture-confidence-not-live'] : [],
+          warnings: value.sourceStatus === 'FIXTURE' ? ['fixture-confidence-not-live'] : ['supplied-confidence-metrics-unverified'],
           provenance: provenance(
             'structure-confidence',
             'calculate_structure_confidence',
@@ -558,8 +714,7 @@ export class StructureController {
 
   @Tool({
     name: 'detect_binding_pockets',
-    description:
-      'Detect binding pockets with fpocket when configured, otherwise fail or fixture-replay.',
+    description: 'Detect real pockets from supplied PDB coordinates using fpocket, or replay an explicit fixture.',
     inputSchema: pocketInput,
     examples: {
       request: {
@@ -582,15 +737,52 @@ export class StructureController {
       context,
       operation: async (value) => {
         const environment = loadMcpEnvironment();
-        if (value.method === 'fpocket' && (environment.FPOCKET_ENABLED || this.runtimeInjected)) {
-          const result = await this.runtime.runCommand(process.env.FPOCKET_COMMAND ?? 'fpocket', [
-            '-f',
-            value.structureArtifactRef,
-          ]);
-          return {
-            pockets: parseFpocketPockets(value.structureId, result.stdout),
-            provenance: provenance('fpocket', value.method, 'LIVE', value),
-          };
+        if (value.method === 'fpocket') {
+          if (!environment.FPOCKET_ENABLED && !this.runtimeInjected) {
+            throw new ToolExecutionError('FPOCKET_NOT_CONFIGURED', 'CONNECTOR', 'fpocket is not enabled.');
+          }
+          if (!value.structurePdbBase64) {
+            throw new ToolExecutionError('FPOCKET_STRUCTURE_REQUIRED', 'VALIDATION', 'fpocket requires actual PDB bytes.');
+          }
+          const pdb = decodeStructurePdb(value.structurePdbBase64);
+          const directory = await mkdtemp(join(tmpdir(), 'immunograph-fpocket-'));
+          try {
+            const inputPath = join(directory, 'structure.pdb');
+            await writeFile(inputPath, pdb);
+            if (process.platform === 'win32' && environment.FPOCKET_WSL_DISTRO) {
+              await this.runtime.runCommand('wsl.exe', ['-d', environment.FPOCKET_WSL_DISTRO, '--', environment.FPOCKET_COMMAND, '-f', windowsPathToWsl(inputPath)]);
+            } else {
+              await this.runtime.runCommand(environment.FPOCKET_COMMAND, ['-f', inputPath]);
+            }
+            const outputDirectory = join(directory, 'structure_out');
+            const report = await readFile(join(outputDirectory, 'structure_info.txt'), 'utf8');
+            const descriptors = parseFpocketReport(report);
+            const pockets = await Promise.all(descriptors.map(async (descriptor) => {
+              const vertices = await readFile(join(outputDirectory, 'pockets', `pocket${descriptor.number}_vert.pqr`), 'utf8');
+              return {
+                pocketId: `${value.structureId}-pocket-${descriptor.number}`,
+                structureId: value.structureId,
+                score: descriptor.score,
+                druggabilityScore: descriptor.druggability,
+                center: fpocketCenter(vertices),
+                sourceStatus: 'LIVE' as const,
+              };
+            }));
+            if (pockets.length === 0) {
+              throw new ToolExecutionError('FPOCKET_NO_POCKETS', 'CONNECTOR', 'fpocket produced no parseable pocket coordinates.');
+            }
+            return {
+              pockets,
+              artifacts: [inlineArtifact(`${value.runId}-fpocket-report`, 'fpocket-info.txt', 'text/plain', `mcp://structure/${value.runId}/fpocket-info.txt`, report)],
+              provenance: provenance('fpocket', 'detect_binding_pockets', 'LIVE', {
+                structureId: value.structureId,
+                pdbSha256: createHash('sha256').update(pdb).digest('hex'),
+                pocketCount: pockets.length,
+              }),
+            };
+          } finally {
+            await rm(directory, { recursive: true, force: true });
+          }
         }
         return {
           pockets: [
@@ -611,7 +803,7 @@ export class StructureController {
 
   @Tool({
     name: 'create_molstar_view',
-    description: 'Create a Mol* view-state reference for structure or docking visualization.',
+    description: 'Export a Mol* HTML viewer with embedded PDB coordinates, or return an explicit fixture reference.',
     inputSchema: molstarInput,
     examples: {
       request: {
@@ -635,7 +827,39 @@ export class StructureController {
       context,
       operation: (value) => {
         const environment = loadMcpEnvironment();
-        const live = environment.MOLSTAR_ENABLED || this.runtimeInjected;
+        if (value.structurePdbBase64) {
+          if (!environment.MOLSTAR_ENABLED && !this.runtimeInjected) {
+            throw new ToolExecutionError('MOLSTAR_NOT_CONFIGURED', 'CONNECTOR', 'Mol* export is not enabled.');
+          }
+          const pdb = decodeStructurePdb(value.structurePdbBase64);
+          const ligand = value.ligandPdbBase64 ? Buffer.from(value.ligandPdbBase64, 'base64') : undefined;
+          if (value.mode === 'DOCKING' && (!ligand || !ligand.toString('utf8').includes('HETATM'))) {
+            throw new ToolExecutionError('MOLSTAR_LIGAND_REQUIRED', 'VALIDATION', 'Docking view requires ligand PDB HETATM coordinates.');
+          }
+          const html = molstarViewerHtml(value.viewId, pdb.toString('utf8'), ligand?.toString('utf8'));
+          const stateRef = `mcp://views/${value.runId}/${value.viewId}.html`;
+          return {
+            viewer: {
+              viewId: value.viewId,
+              viewer: 'Mol*' as const,
+              stateRef,
+              structureArtifactRef: value.structureArtifactRef,
+              ...(value.ligandArtifactRef ? { ligandArtifactRef: value.ligandArtifactRef } : {}),
+              mode: value.mode,
+              sourceStatus: 'LIVE' as const,
+              scientificUse: true,
+            },
+            artifact: inlineArtifact(`${value.runId}-${value.viewId}`, `${value.viewId}.html`, 'text/html', stateRef, html),
+            provenance: provenance('molstar', 'create_molstar_view', 'LIVE', {
+              structureSha256: createHash('sha256').update(pdb).digest('hex'),
+              ligandSha256: ligand ? createHash('sha256').update(ligand).digest('hex') : undefined,
+              molstarVersion: '5.13.1',
+            }),
+          };
+        }
+        if (environment.MOLSTAR_ENABLED || this.runtimeInjected) {
+          throw new ToolExecutionError('MOLSTAR_STRUCTURE_REQUIRED', 'VALIDATION', 'Mol* export requires actual structure PDB bytes.');
+        }
         return {
           viewer: {
             viewId: value.viewId,
@@ -646,13 +870,13 @@ export class StructureController {
               ? {}
               : { ligandArtifactRef: value.ligandArtifactRef }),
             mode: value.mode,
-            sourceStatus: live ? ('LIVE' as const) : ('FIXTURE' as const),
-            scientificUse: live,
+            sourceStatus: 'FIXTURE' as const,
+            scientificUse: false,
           },
           provenance: provenance(
             'molstar',
             'create_molstar_view',
-            live ? 'LIVE' : 'FIXTURE',
+            'FIXTURE',
             value,
           ),
         };
@@ -689,47 +913,92 @@ function extractPdbChainIds(contents: string): string[] {
   return [...ids].sort();
 }
 
+function parseAlphaFoldPlddt(contents: string): Array<{ chainId: string; residueNumber: number; insertionCode: string; plddt: number }> {
+  const lines = contents.split(/\r?\n/u);
+  if (!lines.some((line) => line.startsWith('TITLE ') && line.toUpperCase().includes('ALPHAFOLD'))) {
+    throw new ToolExecutionError('PLDDT_NOT_ALPHAFOLD_PDB', 'VALIDATION', 'pLDDT extraction requires an AlphaFold DB PDB file; experimental B-factors are not pLDDT.');
+  }
+  const residues = new Map<string, { chainId: string; residueNumber: number; insertionCode: string; plddt: number }>();
+  for (const line of lines) {
+    if (!line.startsWith('ATOM  ') || line.slice(12, 16).trim() !== 'CA') continue;
+    if (line.length < 66 || !line.slice(60, 66).trim()) {
+      throw new ToolExecutionError('PLDDT_PDB_INVALID', 'VALIDATION', 'AlphaFold PDB is missing a C-alpha pLDDT field.');
+    }
+    const alternateLocation = line[16];
+    if (alternateLocation !== ' ' && alternateLocation !== 'A') continue;
+    const chainId = line[21]?.trim() ?? '';
+    const residueNumber = Number(line.slice(22, 26).trim());
+    const insertionCode = line[26]?.trim() ?? '';
+    const plddt = Number(line.slice(60, 66).trim());
+    if (!chainId || !Number.isInteger(residueNumber) || !Number.isFinite(plddt) || plddt < 0 || plddt > 100) {
+      throw new ToolExecutionError('PLDDT_PDB_INVALID', 'VALIDATION', 'AlphaFold PDB has invalid C-alpha residue identifiers or pLDDT values.');
+    }
+    const key = `${chainId}:${residueNumber}:${insertionCode}`;
+    if (residues.has(key)) {
+      throw new ToolExecutionError('PLDDT_PDB_INVALID', 'VALIDATION', 'AlphaFold PDB repeats a C-alpha residue.');
+    }
+    residues.set(key, { chainId, residueNumber, insertionCode, plddt });
+  }
+  if (residues.size === 0) {
+    throw new ToolExecutionError('PLDDT_PDB_INVALID', 'VALIDATION', 'AlphaFold PDB contains no C-alpha residues with pLDDT.');
+  }
+  return [...residues.values()];
+}
+
 function stableUnitInterval(value: unknown): number {
   const hash = canonicalJsonSha256(value as never);
   return Number.parseInt(hash.slice(0, 8), 16) / 0xffffffff;
 }
 
-function parseFirstUnitInterval(output: string): number {
-  const matches = [...output.matchAll(/(?:^|\s)(0\.\d+|1\.0+)(?:\s|$)/gu)];
-  const last = matches.at(-1);
-  return last?.[1] === undefined ? 0.5 : Number(last[1]);
+function decodeStructurePdb(encoded: string): Buffer {
+  const bytes = Buffer.from(encoded, 'base64');
+  if (bytes.byteLength === 0 || bytes.byteLength > 5_000_000 || !bytes.toString('utf8').includes('ATOM  ')) {
+    throw new ToolExecutionError('STRUCTURE_PDB_INVALID', 'VALIDATION', 'Actual protein PDB atom coordinates are required.');
+  }
+  return bytes;
 }
 
-function parseFpocketPockets(structureId: string, output: string) {
-  const match =
-    output.match(
-      /Pocket\s+(\d+)\s+Score\s+(-?\d+(?:\.\d+)?)\s+DrugScore\s+(0(?:\.\d+)?|1(?:\.0+)?)/iu,
-    ) ??
-    output.match(
-      /Pocket\s+(\d+)\s*:[\s\S]*?Score\s*:\s*(-?\d+(?:\.\d+)?)[\s\S]*?Druggability\s+Score\s*:\s*(0(?:\.\d+)?|1(?:\.0+)?)/iu,
-    );
-  if (match === null) {
-    return [
-      {
-        pocketId: `${structureId}-pocket-1`,
-        structureId,
-        score: 1,
-        druggabilityScore: 0.5,
-        center: { x: 0, y: 0, z: 0 },
-        sourceStatus: 'LIVE' as const,
-      },
-    ];
+function molstarViewerHtml(viewId: string, pdb: string, ligand?: string): string {
+  const safe = (value: string) => JSON.stringify(value).replaceAll('<', '\\u003c');
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ImmunoGraph Mol* ${viewId.replaceAll(/[<>&"']/gu, '')}</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/molstar@5.13.1/build/viewer/molstar.css">
+<script src="https://cdn.jsdelivr.net/npm/molstar@5.13.1/build/viewer/molstar.js"></script>
+<style>body{margin:0;background:#101820;color:white;font:14px system-ui}header{padding:10px 16px}#app{position:absolute;top:42px;bottom:0;left:0;right:0}</style>
+</head><body><header>ImmunoGraph Mol* · ${viewId.replaceAll(/[<>&"']/gu, '')}</header><div id="app"></div><script>
+const structurePdb=${safe(pdb)};
+const ligandPdb=${safe(ligand ?? '')};
+molstar.Viewer.create('app',{layoutIsExpanded:false,layoutShowControls:true,layoutShowRemoteState:false,layoutShowLog:false})
+  .then(async viewer=>{await viewer.loadStructureFromData(structurePdb,'pdb');if(ligandPdb)await viewer.loadStructureFromData(ligandPdb,'pdb');})
+  .catch(error=>{document.querySelector('header').textContent='Mol* load failed: '+error.message;});
+</script></body></html>`;
+}
+
+function windowsPathToWsl(path: string): string {
+  const match = /^([A-Za-z]):\\(.*)$/u.exec(path);
+  if (!match) throw new ToolExecutionError('FPOCKET_PATH_INVALID', 'VALIDATION', 'WSL fpocket requires a Windows drive path.');
+  return `/mnt/${match[1]!.toLowerCase()}/${match[2]!.replaceAll('\\', '/')}`;
+}
+
+function parseFpocketReport(report: string): Array<{ number: number; score: number; druggability: number }> {
+  return [...report.matchAll(/^Pocket\s+(\d+)\s*:\s*$([\s\S]*?)(?=^Pocket\s+\d+\s*:|$(?![\s\S]))/gmu)]
+    .map((match) => ({
+      number: Number(match[1]),
+      score: Number(/\bScore\s*:\s*(-?\d+(?:\.\d+)?)/u.exec(match[2] ?? '')?.[1]),
+      druggability: Number(/\bDruggability Score\s*:\s*(\d+(?:\.\d+)?)/u.exec(match[2] ?? '')?.[1]),
+    }))
+    .filter((item) => Number.isInteger(item.number) && Number.isFinite(item.score) && Number.isFinite(item.druggability) && item.druggability >= 0 && item.druggability <= 1);
+}
+
+function fpocketCenter(vertices: string): { x: number; y: number; z: number } {
+  const coordinates = vertices.split(/\r?\n/u)
+    .filter((line) => line.startsWith('ATOM  '))
+    .map((line) => [Number(line.slice(30, 38)), Number(line.slice(38, 46)), Number(line.slice(46, 54))]);
+  if (coordinates.length === 0 || coordinates.some((point) => point.some((axis) => !Number.isFinite(axis)))) {
+    throw new ToolExecutionError('FPOCKET_COORDINATES_INVALID', 'CONNECTOR', 'fpocket pocket has no valid alpha sphere coordinates.');
   }
-  return [
-    {
-      pocketId: `${structureId}-pocket-${match[1]}`,
-      structureId,
-      score: Number(match[2]),
-      druggabilityScore: Number(match[3]),
-      center: { x: 0, y: 0, z: 0 },
-      sourceStatus: 'LIVE' as const,
-    },
-  ];
+  const average = (axis: number) => coordinates.reduce((sum, point) => sum + point[axis]!, 0) / coordinates.length;
+  return { x: average(0), y: average(1), z: average(2) };
 }
 
 function provenance(

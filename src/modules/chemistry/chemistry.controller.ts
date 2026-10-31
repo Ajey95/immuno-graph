@@ -1,6 +1,12 @@
+import { createHash } from 'node:crypto';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { canonicalJsonSha256 } from '../../lib/algorithms/index.js';
-import { ControllerDecorator, ToolDecorator as Tool } from '@nitrostack/core';
-import type { ExecutionContext } from '@nitrostack/core';
+import { ControllerDecorator, ToolDecorator as Tool } from '../common/mcp-compat.js';
+import type { ExecutionContext } from '../common/mcp-compat.js';
 import { z } from 'zod';
 
 import {
@@ -9,6 +15,7 @@ import {
   identifierSchema,
 } from '../common/contracts.js';
 import { executeTool, ToolExecutionError } from '../common/executor.js';
+import { inlineArtifact, inlineArtifactSchema } from '../common/inline-artifact.js';
 import { defaultLiveToolRuntime, type LiveToolRuntime } from '../common/live-runtime.js';
 import { loadMcpEnvironment } from '../config/environment.js';
 
@@ -140,6 +147,7 @@ const prepareLigandData = z
     ligandId: identifierSchema,
     compoundId: identifierSchema,
     artifactRef: identifierSchema,
+    artifacts: z.array(inlineArtifactSchema).optional(),
     format: z.enum(['PDBQT', 'SDF', 'FIXTURE_JSON']),
     sourceStatus,
     scientificUse: z.boolean(),
@@ -232,7 +240,7 @@ export class ChemistryController {
 
   @Tool({
     name: 'validate_compound',
-    description: 'Validate compound identity and basic molecular string shape before docking.',
+    description: 'Parse and validate real SMILES using RDKit when the compound source is LIVE.',
     inputSchema: validateCompoundInput,
     examples: {
       request: {
@@ -253,7 +261,33 @@ export class ChemistryController {
       inputSchema: validateCompoundInput,
       dataSchema: validateCompoundData,
       context,
-      operation: (value) => {
+      operation: async (value) => {
+        if (value.sourceStatus !== 'FIXTURE') {
+          const environment = loadMcpEnvironment();
+          if (!environment.RDKIT_ENABLED && !this.runtimeInjected) {
+            throw new ToolExecutionError('RDKIT_NOT_CONFIGURED', 'CONNECTOR', 'Live compound validation requires RDKit.');
+          }
+          const script = fileURLToPath(new URL('../../../scripts/live/compound_ops.py', import.meta.url));
+          const result = await this.runtime.runCommand(environment.RDKIT_PYTHON_COMMAND, [script, 'validate', value.smiles]);
+          const parsed = parseCompoundResult(result.stdout);
+          return {
+            compoundId: value.compoundId,
+            valid: parsed.valid,
+            warnings: parsed.valid ? [] : ['invalid-smiles'],
+            checks: [{
+              checkId: 'CHEM-SMILES-001',
+              status: parsed.valid ? 'PASS' as const : 'FAIL' as const,
+              message: parsed.valid
+                ? `RDKit parsed ${parsed.heavyAtomCount} heavy atoms; canonical SMILES ${parsed.canonicalSmiles}.`
+                : 'RDKit rejected the supplied SMILES.',
+            }],
+            provenance: provenance('rdkit', 'validate_compound', value.sourceStatus, {
+              compoundId: value.compoundId,
+              inputSha256: createHash('sha256').update(value.smiles).digest('hex'),
+              ...(parsed.valid ? { canonicalSmiles: parsed.canonicalSmiles, inchiKey: parsed.inchiKey } : {}),
+            }),
+          };
+        }
         const valid = /^[A-Za-z0-9@+\-[\]()=#\\/%.]+$/.test(value.smiles);
         return {
           compoundId: value.compoundId,
@@ -281,7 +315,7 @@ export class ChemistryController {
 
   @Tool({
     name: 'deduplicate_compounds',
-    description: 'Canonicalize compounds by normalized SMILES-like identity.',
+    description: 'Deduplicate live compounds by RDKit canonical isomeric SMILES and InChIKey.',
     inputSchema: deduplicateInput,
     examples: {
       request: {
@@ -300,7 +334,55 @@ export class ChemistryController {
       inputSchema: deduplicateInput,
       dataSchema: deduplicateData,
       context,
-      operation: (value) => {
+      operation: async (value) => {
+        if (value.compounds.some((compound) => compound.sourceStatus !== 'FIXTURE')) {
+          const statuses = new Set(value.compounds.map((compound) => compound.sourceStatus));
+          if (statuses.size !== 1) throw new ToolExecutionError('MIXED_SOURCE_STATUS', 'VALIDATION', 'Deduplicate each source-status cohort separately to preserve provenance.');
+          const environment = loadMcpEnvironment();
+          if (!environment.RDKIT_ENABLED && !this.runtimeInjected) {
+            throw new ToolExecutionError('RDKIT_NOT_CONFIGURED', 'CONNECTOR', 'Live compound deduplication requires RDKit.');
+          }
+          const directory = await mkdtemp(join(tmpdir(), 'immunograph-canonicalize-'));
+          try {
+            const inputPath = join(directory, 'compounds.json');
+            await writeFile(inputPath, JSON.stringify(value.compounds));
+            const script = fileURLToPath(new URL('../../../scripts/live/compound_ops.py', import.meta.url));
+            const result = await this.runtime.runCommand(environment.RDKIT_PYTHON_COMMAND, [script, 'canonicalize', inputPath]);
+            const parsed = JSON.parse(result.stdout) as unknown;
+            if (!Array.isArray(parsed) || parsed.length !== value.compounds.length) {
+              throw new ToolExecutionError('RDKIT_OUTPUT_INVALID', 'CONNECTOR', 'RDKit canonicalization returned an invalid compound list.');
+            }
+            const seen = new Map<string, string>();
+            const canonicalCompoundIds: string[] = [];
+            const duplicateLinks: Array<{ duplicateId: string; canonicalId: string; ruleId: 'CHEM-DUPLICATE-001' }> = [];
+            for (let index = 0; index < value.compounds.length; index += 1) {
+              const compound = value.compounds[index]!;
+              const molecular = parseCompoundResult(JSON.stringify(parsed[index]));
+              if (!molecular.valid) {
+                throw new ToolExecutionError('INVALID_SMILES', 'VALIDATION', `RDKit rejected SMILES for ${compound.compoundId}.`);
+              }
+              const key = molecular.inchiKey;
+              const canonical = seen.get(key);
+              if (canonical) {
+                duplicateLinks.push({ duplicateId: compound.compoundId, canonicalId: canonical, ruleId: 'CHEM-DUPLICATE-001' });
+              } else {
+                seen.set(key, compound.compoundId);
+                canonicalCompoundIds.push(compound.compoundId);
+              }
+            }
+            return {
+              canonicalCompoundIds,
+              duplicateLinks,
+              provenance: provenance('rdkit', 'deduplicate_compounds', value.compounds[0]!.sourceStatus, {
+                compoundCount: value.compounds.length,
+                inputSha256: createHash('sha256').update(JSON.stringify(value.compounds)).digest('hex'),
+                identity: 'InChIKey from RDKit parsed structures',
+              }),
+            };
+          } finally {
+            await rm(directory, { recursive: true, force: true });
+          }
+        }
         const seen = new Map<string, string>();
         const canonicalCompoundIds: string[] = [];
         const duplicateLinks: Array<{
@@ -362,7 +444,10 @@ export class ChemistryController {
       context,
       operation: async (value) => {
         const environment = loadMcpEnvironment();
-        if (value.method === 'rdkit' && (environment.RDKIT_ENABLED || this.runtimeInjected)) {
+        if (value.method === 'rdkit') {
+          if (!environment.RDKIT_ENABLED && !this.runtimeInjected) {
+            throw new ToolExecutionError('RDKIT_NOT_CONFIGURED', 'CONNECTOR', 'RDKit descriptors require RDKit to be enabled.');
+          }
           const result = await this.runtime.runCommand(environment.RDKIT_PYTHON_COMMAND, [
             '-c',
             rdkitDescriptorScript(),
@@ -386,7 +471,7 @@ export class ChemistryController {
   @Tool({
     name: 'prepare_ligand',
     description:
-      'Prepare a ligand artifact reference through configured chemistry tooling or fixture fallback.',
+      'Generate real 3D SDF and PDBQT ligand bytes with RDKit/Meeko, or return an explicit fixture reference.',
     inputSchema: prepareLigandInput,
     examples: {
       request: {
@@ -409,23 +494,43 @@ export class ChemistryController {
       context,
       operation: async (value) => {
         const environment = loadMcpEnvironment();
-        if (environment.OPENBABEL_ENABLED || this.runtimeInjected) {
-          const command = process.env.OPENBABEL_COMMAND ?? 'obabel';
-          await this.runtime.runCommand(command, [
-            `-:${value.smiles}`,
-            '-ismi',
-            '-opdbqt',
-            '--gen3d',
-          ]);
-          return {
-            ligandId: `${value.compoundId}-ligand`,
-            compoundId: value.compoundId,
-            artifactRef: `mcp://ligands/${value.runId}/${value.compoundId}.pdbqt`,
-            format: 'PDBQT' as const,
-            sourceStatus: 'LIVE' as const,
-            scientificUse: true,
-            provenance: provenance('open-babel', value.preparationMethod, 'LIVE', value),
-          };
+        if (value.preparationMethod === 'meeko') {
+          if (!environment.MEEKO_ENABLED && !this.runtimeInjected) {
+            throw new ToolExecutionError('MEEKO_NOT_CONFIGURED', 'CONNECTOR', 'Meeko ligand preparation is not enabled.');
+          }
+          const directory = await mkdtemp(join(tmpdir(), 'immunograph-ligand-'));
+          try {
+            const sdfPath = join(directory, 'ligand.sdf');
+            const pdbqtPath = join(directory, 'ligand.pdbqt');
+            const script = fileURLToPath(new URL('../../../scripts/live/prepare_ligand.py', import.meta.url));
+            await this.runtime.runCommand(environment.MEEKO_PYTHON_COMMAND, [script, value.smiles, sdfPath, pdbqtPath]);
+            const [sdf, pdbqt] = await Promise.all([readFile(sdfPath), readFile(pdbqtPath)]);
+            if (!pdbqt.toString('utf8').includes('ATOM')) {
+              throw new ToolExecutionError('LIGAND_PDBQT_INVALID', 'CONNECTOR', 'Meeko produced no ligand atom coordinates.');
+            }
+            const artifactRef = `mcp://ligands/${value.runId}/${value.compoundId}.pdbqt`;
+            return {
+              ligandId: `${value.compoundId}-ligand`,
+              compoundId: value.compoundId,
+              artifactRef,
+              artifacts: [
+                inlineArtifact(`${value.runId}-${value.compoundId}-sdf`, 'ligand.sdf', 'chemical/x-mdl-sdfile', `mcp://ligands/${value.runId}/${value.compoundId}.sdf`, sdf),
+                inlineArtifact(`${value.runId}-${value.compoundId}-pdbqt`, 'ligand.pdbqt', 'chemical/x-pdbqt', artifactRef, pdbqt),
+              ],
+              format: 'PDBQT' as const,
+              sourceStatus: 'LIVE' as const,
+              scientificUse: true,
+              provenance: provenance('rdkit-meeko', 'prepare_ligand', 'LIVE', {
+                compoundId: value.compoundId,
+                smilesSha256: createHash('sha256').update(value.smiles).digest('hex'),
+              }),
+            };
+          } finally {
+            await rm(directory, { recursive: true, force: true });
+          }
+        }
+        if (value.preparationMethod !== 'fixture-ligand-preparation') {
+          throw new ToolExecutionError('LIGAND_METHOD_UNSUPPORTED', 'VALIDATION', 'Use meeko or explicit fixture preparation.');
         }
         return {
           ligandId: `${value.compoundId}-ligand`,
@@ -471,7 +576,7 @@ function parsePubChemProperty(payload: unknown, fallbackCid: string) {
     const first = payload.PropertyTable.Properties[0] as unknown;
     if (typeof first === 'object' && first !== null) {
       const record = first as Record<string, unknown>;
-      const smiles = record.IsomericSMILES;
+      const smiles = record.SMILES ?? record.IsomericSMILES;
       if (typeof smiles === 'string' && smiles.length > 0) {
         return {
           cid:
@@ -505,7 +610,7 @@ function rdkitDescriptorScript(): string {
     'if mol is None: raise SystemExit(2)',
     'rings = mol.GetRingInfo().AtomRings()',
     'print(json.dumps({"heavyAtomCount": mol.GetNumHeavyAtoms(), "heteroAtomCount": Lipinski.NumHeteroatoms(mol), "aromaticRingEstimate": sum(1 for ring in rings if all(mol.GetAtomWithIdx(i).GetIsAromatic() for i in ring)), "rotatableBondEstimate": Lipinski.NumRotatableBonds(mol)}))',
-  ].join('; ');
+  ].join('\n');
 }
 
 function parseDescriptorJson(output: string) {
@@ -525,6 +630,21 @@ function parseDescriptorJson(output: string) {
       false,
     );
   }
+}
+
+function parseCompoundResult(output: string):
+  | { valid: false }
+  | { valid: true; canonicalSmiles: string; inchiKey: string; heavyAtomCount: number } {
+  try {
+    const parsed = JSON.parse(output) as Record<string, unknown>;
+    if (parsed.valid === false) return { valid: false };
+    if (parsed.valid === true && typeof parsed.canonicalSmiles === 'string' &&
+      typeof parsed.inchiKey === 'string' && parsed.inchiKey.length > 0 &&
+      typeof parsed.heavyAtomCount === 'number' && Number.isInteger(parsed.heavyAtomCount) && parsed.heavyAtomCount > 0) {
+      return { valid: true, canonicalSmiles: parsed.canonicalSmiles, inchiKey: parsed.inchiKey, heavyAtomCount: parsed.heavyAtomCount };
+    }
+  } catch { /* Invalid provider output is handled below. */ }
+  throw new ToolExecutionError('RDKIT_OUTPUT_INVALID', 'CONNECTOR', 'RDKit compound output was not valid JSON.');
 }
 
 function nonnegativeInteger(value: unknown): number {

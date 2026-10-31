@@ -15,8 +15,8 @@ import {
   loadReferenceBundle,
   rankingProfileSchema,
 } from '../../lib/database/mcp.js';
-import { ControllerDecorator, ToolDecorator } from '@nitrostack/core';
-import type { ExecutionContext } from '@nitrostack/core';
+import { ControllerDecorator, ToolDecorator } from '../common/mcp-compat.js';
+import type { ExecutionContext } from '../common/mcp-compat.js';
 import { z } from 'zod';
 
 import type { CapabilityPort } from '../common/capability-port.js';
@@ -55,7 +55,7 @@ const optimizationCandidateSchema = z
     agreement: unitIntervalSchema,
     completeness: unitIntervalSchema,
     category: z.enum(['RECOMMENDED', 'REVIEW', 'REJECTED']),
-    populationCoverage: z.record(unitIntervalSchema),
+    populationCoverage: z.record(z.string(), unitIntervalSchema),
   })
   .strict();
 const geneticOptimizationInput = z
@@ -64,7 +64,7 @@ const geneticOptimizationInput = z
     finalRankingSnapshotHash: sha256Schema,
     candidates: z.array(optimizationCandidateSchema).min(1),
     populationIds: z.array(identifierSchema).min(1),
-    populationWeights: z.record(z.number().finite().nonnegative()).optional(),
+    populationWeights: z.record(z.string(), z.number().finite().nonnegative()).optional(),
     maximumGenerations: z.number().int().positive(),
     populationSize: z.number().int().positive(),
     maximumConstructSize: z.number().int().positive(),
@@ -121,8 +121,14 @@ const calibrationInput = z
           .strict(),
       )
       .min(1),
+    calibrationSamples: z.array(z.object({ score: unitIntervalSchema, outcome: z.union([z.literal(0), z.literal(1)]) }).strict()).min(10).optional(),
+    evaluationSamples: z.array(z.object({ score: unitIntervalSchema, outcome: z.union([z.literal(0), z.literal(1)]) }).strict()).min(10).optional(),
   })
-  .strict();
+  .strict().superRefine((value, ctx) => {
+    if (value.method !== 'RULE_BASED_CALIBRATION' && (!value.calibrationSamples || !value.evaluationSamples)) {
+      ctx.addIssue({ code: 'custom', message: 'PLATT and ISOTONIC require separate labeled calibrationSamples and evaluationSamples.' });
+    }
+  });
 const calibrationData = z
   .object({
     method: z.enum(['RULE_BASED_CALIBRATION', 'PLATT', 'ISOTONIC']),
@@ -135,8 +141,9 @@ const calibrationData = z
       }),
     ),
     reliability: z.object({
-      brierScore: unitIntervalSchema,
-      expectedCalibrationError: unitIntervalSchema,
+      brierScore: unitIntervalSchema.nullable(),
+      expectedCalibrationError: unitIntervalSchema.nullable(),
+      evaluationCount: z.number().int().nonnegative(),
       scientificUse: z.literal(false),
     }),
     provenance: connectorProvenanceSchema,
@@ -582,7 +589,7 @@ export class EvidenceController {
   @ToolDecorator({
     name: 'calibrate_confidence',
     description:
-      'Calibrate confidence from score, agreement, completeness, and evidence count without claiming experimental validation.',
+      'Fit Platt or isotonic calibration on labeled samples and evaluate on separate labeled outcomes; rule-based confidence has no reliability metrics.',
     inputSchema: calibrationInput,
     examples: {
       request: {
@@ -611,15 +618,21 @@ export class EvidenceController {
       dataSchema: calibrationData,
       context,
       operation: (validated) => {
+        const model = validated.method === 'PLATT'
+          ? fitPlatt(validated.calibrationSamples!)
+          : validated.method === 'ISOTONIC'
+            ? fitIsotonic(validated.calibrationSamples!)
+            : null;
         const calibrated = validated.predictions.map((prediction) => {
           const evidenceFactor = Math.min(1, prediction.evidenceCount / 3);
-          const calibratedConfidence =
+          const calibratedConfidence = model ? model(prediction.score) :
             prediction.score * 0.45 +
             prediction.agreement * 0.25 +
             prediction.completeness * 0.2 +
             evidenceFactor * 0.1;
-          const uncertainty =
-            1 - Math.min(prediction.agreement, prediction.completeness, evidenceFactor);
+          const uncertainty = model
+            ? 1 - Math.abs(2 * calibratedConfidence - 1)
+            : 1 - Math.min(prediction.agreement, prediction.completeness, evidenceFactor);
           return {
             entityId: prediction.entityId,
             calibratedConfidence,
@@ -632,14 +645,16 @@ export class EvidenceController {
                   : ('LOW' as const),
           };
         });
-        const expectedCalibrationError =
-          calibrated.reduce((sum, item) => sum + item.uncertainty, 0) / calibrated.length;
+        const evaluation = model && validated.evaluationSamples
+          ? evaluateCalibration(model, validated.evaluationSamples)
+          : null;
         return {
           method: validated.method,
           calibrated,
           reliability: {
-            brierScore: Math.min(1, expectedCalibrationError * expectedCalibrationError),
-            expectedCalibrationError,
+            brierScore: evaluation?.brierScore ?? null,
+            expectedCalibrationError: evaluation?.expectedCalibrationError ?? null,
+            evaluationCount: validated.evaluationSamples?.length ?? 0,
             scientificUse: false as const,
           },
           provenance: {
@@ -647,13 +662,13 @@ export class EvidenceController {
             connectorVersion: '1.0.0',
             method: validated.method,
             methodVersion: '1.0.0',
-            status: 'SYNTHETIC' as const,
+            status: model ? 'LIVE' as const : 'SYNTHETIC' as const,
             sourceUri: 'https://immunograph.local/algorithms/confidence-calibration',
-            parameters: { scientificUse: false },
-            predictionSource: 'SYNTHETIC' as const,
+            parameters: { scientificUse: false, calibrationCount: validated.calibrationSamples?.length ?? 0, evaluationCount: validated.evaluationSamples?.length ?? 0 },
+            predictionSource: model ? 'LIVE' as const : 'SYNTHETIC' as const,
             scientificUse: false,
             validationStatus: 'DEMONSTRATION_ONLY' as const,
-            algorithm: 'rule-based-confidence-calibrator',
+            algorithm: model ? `${validated.method.toLowerCase()}-labeled-calibrator` : 'rule-based-confidence-calibrator',
             algorithmVersion: '1.0.0',
           },
         };
@@ -676,6 +691,76 @@ export class EvidenceController {
         this.capabilities.invoke(contract.name, validated) as Promise<z.infer<TData>>,
     });
   }
+}
+
+type LabeledSample = { score: number; outcome: 0 | 1 };
+
+function fitPlatt(samples: LabeledSample[]): (score: number) => number {
+  // Logistic regression fitted to labeled calibration data with mild L2 regularization.
+  let slope = 0;
+  let intercept = Math.log((samples.reduce((sum, item) => sum + item.outcome, 0) + 0.5) /
+    (samples.length - samples.reduce((sum, item) => sum + item.outcome, 0) + 0.5));
+  for (let step = 0; step < 2500; step += 1) {
+    let slopeGradient = 0;
+    let interceptGradient = 0;
+    for (const sample of samples) {
+      const probability = sigmoid(slope * sample.score + intercept);
+      slopeGradient += (probability - sample.outcome) * sample.score;
+      interceptGradient += probability - sample.outcome;
+    }
+    const rate = 0.3 / Math.sqrt(1 + step / 100);
+    slope -= rate * (slopeGradient / samples.length + 0.001 * slope);
+    intercept -= rate * interceptGradient / samples.length;
+  }
+  return (score) => sigmoid(slope * score + intercept);
+}
+
+function fitIsotonic(samples: LabeledSample[]): (score: number) => number {
+  const ordered = [...samples].sort((a, b) => a.score - b.score);
+  const blocks: Array<{ maxScore: number; sum: number; count: number }> = [];
+  for (const sample of ordered) {
+    const last = blocks[blocks.length - 1];
+    if (last?.maxScore === sample.score) {
+      last.sum += sample.outcome;
+      last.count += 1;
+    } else {
+      blocks.push({ maxScore: sample.score, sum: sample.outcome, count: 1 });
+    }
+    while (blocks.length >= 2) {
+      const right = blocks[blocks.length - 1]!;
+      const left = blocks[blocks.length - 2]!;
+      if (left.sum / left.count <= right.sum / right.count) break;
+      blocks.splice(-2, 2, {
+        maxScore: right.maxScore,
+        sum: left.sum + right.sum,
+        count: left.count + right.count,
+      });
+    }
+  }
+  return (score) => {
+    const block = blocks.find((item) => score <= item.maxScore) ?? blocks[blocks.length - 1]!;
+    return block.sum / block.count;
+  };
+}
+
+function evaluateCalibration(model: (score: number) => number, samples: LabeledSample[]) {
+  let brier = 0;
+  const bins = Array.from({ length: 10 }, () => ({ count: 0, sumProbability: 0, sumOutcome: 0 }));
+  for (const sample of samples) {
+    const probability = model(sample.score);
+    brier += (probability - sample.outcome) ** 2;
+    const bin = bins[Math.min(9, Math.floor(probability * 10))]!;
+    bin.count += 1;
+    bin.sumProbability += probability;
+    bin.sumOutcome += sample.outcome;
+  }
+  const expectedCalibrationError = bins.reduce((sum, bin) =>
+    sum + (bin.count === 0 ? 0 : Math.abs(bin.sumProbability - bin.sumOutcome) / samples.length), 0);
+  return { brierScore: brier / samples.length, expectedCalibrationError };
+}
+
+function sigmoid(value: number): number {
+  return value >= 0 ? 1 / (1 + Math.exp(-value)) : Math.exp(value) / (1 + Math.exp(value));
 }
 
 type SyntheticFrequency = {

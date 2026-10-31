@@ -26,7 +26,9 @@ export function buildDefaultCapabilityPort(): CapabilityPort {
       enabled: env.IEDB_POPULATION_COVERAGE_ENABLED,
       timeoutMs: env.IEDB_POPULATION_COVERAGE_TIMEOUT_MS,
       maximumResponseBytes: env.IEDB_POPULATION_COVERAGE_MAX_RESPONSE_BYTES,
-      ...(env.IEDB_POPULATION_COVERAGE_URL ? { url: env.IEDB_POPULATION_COVERAGE_URL } : {}),
+      ...(!env.IEDB_POPULATION_COVERAGE_SCRIPT_PATH
+        ? { url: env.IEDB_POPULATION_COVERAGE_URL ?? 'https://api-nextgen-tools.iedb.org/api/v1/pipeline' }
+        : env.IEDB_POPULATION_COVERAGE_URL ? { url: env.IEDB_POPULATION_COVERAGE_URL } : {}),
       ...(env.IEDB_POPULATION_COVERAGE_SCRIPT_PATH
         ? { scriptPath: env.IEDB_POPULATION_COVERAGE_SCRIPT_PATH }
         : {}),

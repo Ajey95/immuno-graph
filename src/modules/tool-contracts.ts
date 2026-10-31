@@ -1,4 +1,4 @@
-import type { ToolOptions } from '@nitrostack/core';
+import type { ToolOptions } from './common/mcp-compat.js';
 import { z } from 'zod';
 
 import {
@@ -15,7 +15,7 @@ import {
 const positiveInteger = z.number().int().positive();
 const nonnegativeInteger = z.number().int().nonnegative();
 const nonemptyStrings = z.array(identifierSchema).min(1);
-const jsonRecord = z.record(z.unknown());
+const jsonRecord = z.record(z.string(), z.unknown());
 type FallbackPolicy = z.infer<typeof fallbackPolicySchema>;
 type PredictorInput = {
   runId: string;
@@ -167,23 +167,14 @@ export function defineContract<TInput extends z.ZodTypeAny, TData extends z.ZodT
 }
 
 export function toolOptions(contract: ToolContract, category: string): ToolOptions {
-  // Public MCP clients such as Claude can reject tools marked as task-support
-  // "required" unless their host provides NitroStack task augmentation. The
-  // tools are still fully validated and idempotent; expose them as optional so
-  // external clients can call them directly during deployed MCP demos.
-  const taskSupport = contract.taskSupport === 'required' ? 'optional' : contract.taskSupport;
   return {
     name: contract.name,
     description: contract.description,
     inputSchema: contract.inputSchema,
-    // NitroStack v1.0.13 serializes normal tool handler returns as text content.
-    // The MCP SDK rejects text-only results when a tool advertises outputSchema,
-    // expecting structuredContent instead. We still validate every output inside
-    // executeTool; omitting advertised outputSchema keeps HTTP clients compatible.
+    // executeTool validates each result; server.ts returns both MCP text and structured content.
     examples: { request: contract.exampleInput, response: failureExample(contract.name) },
     metadata: { category, tags: ['immunograph', 'deterministic', 'mvp-v1'] },
     annotations: { readOnlyHint: true, idempotentHint: true },
-    taskSupport: taskSupport ?? 'forbidden',
   };
 }
 
@@ -275,12 +266,11 @@ export const predictMhciContract = defineContract({
   dataSchema: predictionDataSchema,
   exampleInput: {
     runId: 'run-1',
-    proteinRef: 'protein-1',
-    sequence: 'ACDEFGHIKLMNPQRST',
+    proteinRef: 'influenza',
     alleles: ['HLA-A*02:01'],
-    peptideLengths: [9],
+    peptideLengths: [9, 10],
     methods: ['iedb-recommended'],
-    fallbackPolicy: 'LIVE_THEN_CACHE_THEN_FIXTURE' as const,
+    fallbackPolicy: 'FIXTURE_ONLY' as const,
   },
   taskSupport: 'required' as const,
 });
@@ -291,22 +281,22 @@ export const predictMhciiContract = defineContract({
   dataSchema: predictionDataSchema,
   exampleInput: {
     runId: 'run-1',
-    proteinRef: 'protein-1',
-    sequence: 'ACDEFGHIKLMNPQRST',
-    alleles: ['HLA-DRB1*01:01'],
+    proteinRef: 'influenza',
+    alleles: ['HLA-DRB1*04:01'],
     peptideLengths: [15],
-    methods: ['iedb-mhcii'],
-    fallbackPolicy: 'LIVE_THEN_CACHE_THEN_FIXTURE' as const,
+    methods: ['iedb-recommended'],
+    fallbackPolicy: 'FIXTURE_ONLY' as const,
   },
   taskSupport: 'required' as const,
 });
 export const predictBcellContract = defineContract({
   name: 'predict_bcell',
-  description: 'Resolve B-cell evidence; GraphBepi is fixture-only in MVP v1.',
+  description: 'Run live IEDB BepiPred-3.0 or local Parker hydrophilicity from a supplied sequence, or resolve explicit GraphBepi fixtures.',
   inputSchema: z
     .object({
       runId: identifierSchema,
       proteinRef: identifierSchema,
+      sequence: z.string().regex(/^[ACDEFGHIKLMNPQRSTVWY]+$/u).min(7).optional(),
       methods: nonemptyStrings,
       parameters: jsonRecord,
       fallbackPolicy: fallbackPolicySchema,
@@ -337,7 +327,7 @@ export const predictBcellContract = defineContract({
   }),
   exampleInput: {
     runId: 'run-1',
-    proteinRef: 'protein-1',
+    proteinRef: 'influenza',
     methods: ['graphbepi'],
     parameters: {},
     fallbackPolicy: 'FIXTURE_ONLY' as const,
@@ -572,10 +562,10 @@ export const populationCoverageContract = defineContract({
   }),
   exampleInput: {
     runId: 'run-1',
-    associations: [{ candidateId: 'candidate-1', allele: 'HLA-A*02:01' }],
-    populationIds: ['world'],
-    classMode: 'CLASS_I' as const,
-    fallbackPolicy: 'LIVE_THEN_CACHE_THEN_FIXTURE' as const,
+    associations: [{ candidateId: 'influenza-mhci-candidate-1', allele: 'HLA-A*02:01' }],
+    populationIds: ['synthetic-population-alpha', 'synthetic-population-beta'],
+    classMode: 'COMBINED' as const,
+    fallbackPolicy: 'FIXTURE_ONLY' as const,
   },
   taskSupport: 'required' as const,
 });
@@ -628,7 +618,7 @@ export const syntheticPopulationCoverageContract = defineContract({
   exampleInput: {
     runId: 'run-1',
     associations: [{ candidateId: 'candidate-1', allele: 'HLA-A*02:01' }],
-    populationIds: ['synthetic-population-alpha'],
+    populationIds: ['synthetic:population-alpha'],
     classMode: 'CLASS_I' as const,
   },
 });
@@ -689,7 +679,7 @@ export const rankCandidatesContract = defineContract({
       candidates: z.array(
         z.object({
           candidateId: identifierSchema,
-          componentScores: z.record(unitIntervalSchema),
+          componentScores: z.record(z.string(), unitIntervalSchema),
           scoreBeforePenalty: unitIntervalSchema,
           missingEvidencePenalty: z.number().nonnegative(),
           softWarningPenalty: z.number().nonnegative(),
@@ -702,7 +692,7 @@ export const rankCandidatesContract = defineContract({
       phase: z.literal('FINAL'),
       candidates: z.array(
         rankedCandidateInputSchema.extend({
-          componentScores: z.record(unitIntervalSchema),
+          componentScores: z.record(z.string(), unitIntervalSchema),
           scoreBeforePenalty: unitIntervalSchema,
           missingEvidencePenalty: z.number().nonnegative(),
           softWarningPenalty: z.number().nonnegative(),
@@ -769,12 +759,12 @@ export const optimizeCoverageContract = defineContract({
               agreement: unitIntervalSchema,
               completeness: unitIntervalSchema,
               category: z.enum(['RECOMMENDED', 'REVIEW', 'REJECTED']),
-              populationCoverage: z.record(unitIntervalSchema),
+              populationCoverage: z.record(z.string(), unitIntervalSchema),
             })
             .strict(),
         )
         .optional(),
-      populationWeights: z.record(z.number().finite().nonnegative()).optional(),
+      populationWeights: z.record(z.string(), z.number().finite().nonnegative()).optional(),
       linker: identifierSchema.optional(),
     })
     .strict()
@@ -791,7 +781,7 @@ export const optimizeCoverageContract = defineContract({
     ),
     selectedCandidateIds: z.array(identifierSchema),
     finalCoverage: unitIntervalSchema,
-    coverageByPopulation: z.record(unitIntervalSchema).optional(),
+    coverageByPopulation: z.record(z.string(), unitIntervalSchema).optional(),
     constructSequence: z.string().optional(),
     averageCandidateScore: unitIntervalSchema.optional(),
     redundancyPenalty: unitIntervalSchema.optional(),
@@ -826,9 +816,9 @@ export const optimizeCoverageContract = defineContract({
   }),
   exampleInput: {
     runId: 'run-1',
-    eligibleCandidateIds: ['candidate-1'],
+    eligibleCandidateIds: ['influenza-mhcii-candidate-1', 'influenza-mhci-candidate-1'],
     finalRankingSnapshotHash: 'a'.repeat(64),
-    populationIds: ['world'],
+    populationIds: ['synthetic-population-alpha', 'synthetic-population-beta'],
     targetCoverage: 0.8,
     method: 'iedb-population-coverage',
   },
@@ -1045,7 +1035,7 @@ export const generateReportContract = defineContract({
     .object({
       runId: identifierSchema,
       templateVersion: identifierSchema,
-      outputFormats: z.array(z.enum(['JSON', 'CSV', 'PDF'])).min(1),
+      outputFormats: z.array(z.enum(['JSON', 'CSV'])).min(1),
       idempotencyKey: identifierSchema,
       reportSnapshot: z
         .object({
@@ -1069,6 +1059,13 @@ export const generateReportContract = defineContract({
     templateVersion: 'mvp-v1.0',
     outputFormats: ['JSON' as const, 'CSV' as const],
     idempotencyKey: 'report-run-1',
+    reportSnapshot: {
+      executionMode: 'FIXTURE' as const,
+      runQuality: 'DEMONSTRATION_ONLY',
+      scientificUse: false,
+      disclaimer: 'Synthetic demonstration only.',
+      candidates: [{ candidateId: 'influenza-mhci-candidate-1', category: 'RECOMMENDED' }],
+    },
   },
   taskSupport: 'required' as const,
 });
@@ -1081,6 +1078,14 @@ export const exportCandidatesContract = defineContract({
       categories: z.array(z.enum(['RECOMMENDED', 'REVIEW', 'REJECTED'])).min(1),
       format: z.enum(['JSON', 'CSV']),
       idempotencyKey: identifierSchema,
+      candidateSnapshot: z.array(z.object({
+        candidateId: identifierSchema,
+        category: z.enum(['RECOMMENDED', 'REVIEW', 'REJECTED']),
+        peptide: identifierSchema,
+        rawScore: z.number().finite(),
+        normalizedScore: unitIntervalSchema,
+        sourceStatus: z.enum(['LIVE', 'CACHED', 'SYNTHETIC', 'FIXTURE']),
+      }).strict()).optional(),
     })
     .strict(),
   dataSchema: artifactSchema,
@@ -1089,6 +1094,14 @@ export const exportCandidatesContract = defineContract({
     categories: ['RECOMMENDED' as const],
     format: 'CSV' as const,
     idempotencyKey: 'export-run-1',
+    candidateSnapshot: [{
+      candidateId: 'influenza-mhci-candidate-1',
+      category: 'RECOMMENDED' as const,
+      peptide: 'YWVTSRQPN',
+      rawScore: 0.77,
+      normalizedScore: 0.8,
+      sourceStatus: 'FIXTURE' as const,
+    }],
   },
 });
 export const visualizeResultsContract = defineContract({
@@ -1106,10 +1119,21 @@ export const visualizeResultsContract = defineContract({
         'WORKFLOW_GRAPH',
         'POPULATION_COVERAGE',
       ]),
+      visualizationSnapshot: z.object({
+        items: z.array(jsonRecord),
+        provenance: jsonRecord.optional(),
+      }).strict().optional(),
     })
     .strict(),
   dataSchema: z.object({ visualizationType: identifierSchema, viewModel: jsonRecord }),
-  exampleInput: { runId: 'run-1', visualizationType: 'SEQUENCE_MAP' as const },
+  exampleInput: {
+    runId: 'run-1',
+    visualizationType: 'SEQUENCE_MAP' as const,
+    visualizationSnapshot: {
+      items: [{ candidateId: 'influenza-mhci-candidate-1', start: 1, end: 9, sourceStatus: 'FIXTURE' }],
+      provenance: { scientificUse: false, sourceKind: 'SYNTHETIC' },
+    },
+  },
 });
 
 export const explainCandidateContract = defineContract({
@@ -1124,7 +1148,7 @@ export const explainCandidateContract = defineContract({
       category: z.enum(['RECOMMENDED', 'REVIEW', 'REJECTED']),
       trackRank: positiveInteger,
       finalScore: unitIntervalSchema,
-      componentScores: z.record(unitIntervalSchema),
+      componentScores: z.record(z.string(), unitIntervalSchema),
       ruleOutcomes: z.array(
         z.object({
           ruleId: identifierSchema,
@@ -1142,7 +1166,7 @@ export const explainCandidateContract = defineContract({
         .nullable(),
       warningRuleIds: z.array(identifierSchema),
       failedRuleIds: z.array(identifierSchema),
-      provenanceSummary: z.record(nonnegativeInteger),
+      provenanceSummary: z.record(z.string(), nonnegativeInteger),
       disclaimer: identifierSchema,
     }),
     llmParaphrase: z.string().nullable(),
@@ -1168,10 +1192,19 @@ export const exportTraceContract = defineContract({
       runId: identifierSchema,
       redactionProfile: identifierSchema,
       idempotencyKey: identifierSchema,
+      traceEvents: z.array(z.object({
+        eventId: identifierSchema,
+        stage: identifierSchema,
+        status: z.enum(['STARTED', 'COMPLETED', 'FAILED', 'SKIPPED']),
+        at: z.string().datetime(),
+      }).strict()).optional(),
     })
     .strict(),
   dataSchema: z.object({ artifact: artifactSchema, eventCount: nonnegativeInteger }),
-  exampleInput: { runId: 'run-1', redactionProfile: 'mvp-safe-v1', idempotencyKey: 'trace-run-1' },
+  exampleInput: {
+    runId: 'run-1', redactionProfile: 'mvp-safe-v1', idempotencyKey: 'trace-run-1',
+    traceEvents: [{ eventId: 'event-1', stage: 'prediction', status: 'COMPLETED' as const, at: '2026-01-01T00:00:00.000Z' }],
+  },
 });
 
 const toolGroupNameSchema = z.enum([
@@ -1226,7 +1259,7 @@ const workflowPlanEdgeSchema = z.object({
 export const describeAgenticWorkflowContract = defineContract({
   name: 'describe_agentic_workflow',
   description:
-    'Describe the single NitroStack MCP app internal agent graph, tool permissions, approvals, and final package contract.',
+    'Describe the single standard MCP server internal agent graph, tool permissions, approvals, and final package contract.',
   inputSchema: z
     .object({
       runId: identifierSchema,
@@ -1236,7 +1269,7 @@ export const describeAgenticWorkflowContract = defineContract({
     .strict(),
   dataSchema: z
     .object({
-      deploymentBoundary: z.literal('ONE_NITROSTACK_MCP_APP'),
+      deploymentBoundary: z.literal('ONE_STANDARD_MCP_SERVER'),
       manifestVersion: identifierSchema,
       planVersion: identifierSchema,
       runId: identifierSchema,
@@ -1377,7 +1410,7 @@ const agentStepSchema = z
     selectedAction: identifierSchema,
     toolNames: z.array(identifierSchema),
     observation: identifierSchema,
-    verification: z.enum(['PASSED', 'REQUIRES_APPROVAL', 'ABSTAINED']),
+    verification: z.enum(['PASSED', 'PLANNED', 'REQUIRES_APPROVAL', 'ABSTAINED']),
     decision: z.enum(['CONTINUE', 'REQUEST_APPROVAL', 'ABSTAIN', 'COMPLETE']),
     inputHash: sha256Schema,
     outputHash: sha256Schema,
@@ -1387,7 +1420,7 @@ const agentStepSchema = z
 export const runAgenticWorkflowContract = defineContract({
   name: 'run_agentic_workflow',
   description:
-    'Run the strict PRD v1.1 LangGraph bounded-agent workflow inside the single NitroStack MCP app.',
+    'Execute supplied approved typed tool calls in a bounded LangGraph workflow, or return a plan when no calls are supplied.',
   inputSchema: z
     .object({
       runId: identifierSchema,
@@ -1395,6 +1428,7 @@ export const runAgenticWorkflowContract = defineContract({
       agentMode: agentModeSchema,
       approvedToolNames: z.array(identifierSchema).min(1),
       requireHumanApproval: z.boolean(),
+      toolCalls: z.array(z.object({ toolName: identifierSchema, arguments: jsonRecord }).strict()).max(46).optional(),
     })
     .strict(),
   dataSchema: z
@@ -1405,15 +1439,22 @@ export const runAgenticWorkflowContract = defineContract({
       status: z.enum(['COMPLETED', 'AWAITING_APPROVAL', 'ABSTAINED']),
       nextApprovalGate: identifierSchema.nullable(),
       steps: z.array(agentStepSchema).min(1),
+      toolResults: z.array(z.object({ agentId: identifierSchema, toolName: identifierSchema, result: z.unknown() }).strict()),
       warnings: z.array(identifierSchema),
     })
     .strict(),
   exampleInput: {
     runId: 'run-1',
-    objective: 'Prioritize epitopes with complete provenance.',
+    objective: 'Validate a supplied protein sequence and generate peptide candidates.',
     agentMode: 'DETERMINISTIC' as const,
-    approvedToolNames: ['validate_sequence', 'rank_candidates'],
-    requireHumanApproval: true,
+    approvedToolNames: ['validate_sequence', 'generate_candidate_peptides'],
+    requireHumanApproval: false,
+    toolCalls: [
+      { toolName: 'validate_sequence', arguments: { fasta: '>sample\nACDEFGHIK' } },
+      { toolName: 'generate_candidate_peptides', arguments: {
+        runId: 'run-1', sequence: { $result: 'validate_sequence.data.normalizedSequence' }, candidateType: 'MHCI', peptideLengths: [9],
+      } },
+    ],
   },
 });
 

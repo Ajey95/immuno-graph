@@ -7,13 +7,15 @@ import {
   validateFasta,
 } from '../../lib/algorithms/index.js';
 import { loadReferenceBundle } from '../../lib/database/mcp.js';
-import { ControllerDecorator, ToolDecorator } from '@nitrostack/core';
-import type { ExecutionContext } from '@nitrostack/core';
+import { ControllerDecorator, ToolDecorator } from '../common/mcp-compat.js';
+import type { ExecutionContext } from '../common/mcp-compat.js';
 import { createHash } from 'node:crypto';
 import type { z } from 'zod';
 
 import type { CapabilityPort } from '../common/capability-port.js';
 import { buildDefaultCapabilityPort } from '../common/default-capability-port.js';
+import { predictIedbBepipred } from '../common/iedb-bcell-capability-port.js';
+import { loadMcpEnvironment } from '../config/environment.js';
 import { executeTool, ToolExecutionError } from '../common/executor.js';
 import {
   generatePeptidesContract,
@@ -122,6 +124,39 @@ export class PredictionController {
       dataSchema: predictBcellContract.dataSchema,
       context,
       operation: async (validated) => {
+        if (validated.methods.length !== 1 && validated.methods.some((method) => method.toLowerCase() === 'bepipred-3.0')) {
+          throw new ToolExecutionError('BEPIPRED_SINGLE_METHOD_REQUIRED', 'VALIDATION', 'Run BepiPred as a separate prediction call; mixed methods are not supported.');
+        }
+        if (validated.methods.length === 1 && validated.methods[0]?.toLowerCase() === 'bepipred-3.0') {
+          if (validated.fallbackPolicy === 'FIXTURE_ONLY') {
+            throw new ToolExecutionError('BEPIPRED_LIVE_POLICY_REQUIRED', 'VALIDATION', 'BepiPred requires a live-permitting fallback policy.');
+          }
+          if (!validated.sequence) {
+            throw new ToolExecutionError('BEPIPRED_SEQUENCE_REQUIRED', 'VALIDATION', 'BepiPred requires an actual protein sequence.');
+          }
+          const environment = loadMcpEnvironment();
+          if (!environment.IEDB_BCELL_ENABLED) {
+            throw new ToolExecutionError('IEDB_BCELL_NOT_CONFIGURED', 'CONNECTOR', 'Set IEDB_BCELL_ENABLED=true for live BepiPred predictions.');
+          }
+          return predictIedbBepipred({
+            runId: validated.runId,
+            proteinRef: validated.proteinRef,
+            sequence: validated.sequence,
+            parameters: validated.parameters,
+          }, {
+            timeoutMs: environment.IEDB_BCELL_TIMEOUT_MS,
+            maximumResponseBytes: environment.IEDB_BCELL_MAX_RESPONSE_BYTES,
+          });
+        }
+        if (validated.methods.length === 1 && validated.methods[0]?.toLowerCase() === 'parker') {
+          if (validated.fallbackPolicy === 'FIXTURE_ONLY') {
+            throw new ToolExecutionError('PARKER_LIVE_POLICY_REQUIRED', 'VALIDATION', 'Parker computation requires a live-permitting fallback policy.');
+          }
+          if (!validated.sequence) {
+            throw new ToolExecutionError('PARKER_SEQUENCE_REQUIRED', 'VALIDATION', 'Parker hydrophilicity requires an actual protein sequence.');
+          }
+          return parkerHydrophilicity(validated.sequence);
+        }
         const requestsGraphBepi = validated.methods.some(
           (method) => method.toLowerCase() === 'graphbepi',
         );
@@ -234,5 +269,44 @@ function withDerivedProteinRef<T>(input: T): T {
   };
 }
 
-// Keep NitroStack's default module composition free of constructor dependencies.
-Reflect.defineMetadata('design:paramtypes', [], PredictionController);
+const parkerScale: Record<string, number> = {
+  A: 2.1, C: 1.4, D: 10, E: 7.8, F: -9.2, G: 5.7, H: 2.1,
+  I: -8, K: 5.7, L: -9.2, M: -4.2, N: 7, P: 2.1, Q: 6,
+  R: 4.2, S: 6.5, T: 5.2, V: -3.7, W: -10, Y: -1.9,
+};
+
+function parkerHydrophilicity(sequence: string) {
+  const residueScores: Array<{ position: number; score: number }> = [];
+  const rawScores: Array<{ position: number; hydrophilicity: number }> = [];
+  for (let start = 0; start <= sequence.length - 7; start += 1) {
+    const window = sequence.slice(start, start + 7);
+    const raw = [...window].reduce((sum, residue) => sum + parkerScale[residue]!, 0) / 7;
+    const position = start + 4;
+    residueScores.push({ position, score: (raw + 10) / 20 });
+    rawScores.push({ position, hydrophilicity: raw });
+  }
+  const regions: Array<{ start: number; end: number; score: number }> = [];
+  for (const residue of residueScores) {
+    if (residue.score <= 0.5) continue;
+    const last = regions.at(-1);
+    if (last && last.end + 1 === residue.position) {
+      last.end = residue.position;
+      last.score = Math.max(last.score, residue.score);
+    } else {
+      regions.push({ start: residue.position, end: residue.position, score: residue.score });
+    }
+  }
+  return {
+    residueScores,
+    regions,
+    rawMethodFields: { rawScores, window: 7, thresholdRaw: 0, scoreNormalization: '(raw + 10) / 20', interpretation: 'hydrophilicity proxy, not validated epitope probability' },
+    provenance: [{
+      connectorId: 'parker-hydrophilicity', connectorVersion: '1.0.0',
+      method: 'parker', methodVersion: '1986', status: 'LIVE' as const,
+      sourceUri: 'https://nextgen-tools.iedb.org/docs/tools/bcell_sequence/',
+      parameters: { sequenceSha256: createHash('sha256').update(sequence).digest('hex'), window: 7 },
+      predictionSource: 'LIVE' as const, scientificUse: true,
+      validationStatus: 'SCIENTIFIC' as const, algorithm: 'Parker hydrophilicity scale', algorithmVersion: '1986',
+    }],
+  };
+}

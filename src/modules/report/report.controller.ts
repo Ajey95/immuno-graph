@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto';
 
 import { explainCandidate } from '../../lib/algorithms/index.js';
-import { ControllerDecorator, ToolDecorator } from '@nitrostack/core';
-import type { ExecutionContext } from '@nitrostack/core';
+import { ControllerDecorator, ToolDecorator } from '../common/mcp-compat.js';
+import type { ExecutionContext } from '../common/mcp-compat.js';
 import type { z } from 'zod';
 
 import type { CapabilityPort } from '../common/capability-port.js';
@@ -30,6 +30,12 @@ const CATEGORY = 'Report / Export Tools';
 @ControllerDecorator()
 export class ReportController {
   private capabilities: CapabilityPort = unavailableCapabilityPort;
+  private toolInvoker?: (toolName: string, args: Record<string, unknown>, context: ExecutionContext) => Promise<unknown>;
+
+  useToolInvoker(invoke: (toolName: string, args: Record<string, unknown>, context: ExecutionContext) => Promise<unknown>): this {
+    this.toolInvoker = invoke;
+    return this;
+  }
 
   useCapabilityPort(capabilities: CapabilityPort): this {
     this.capabilities = capabilities;
@@ -84,7 +90,7 @@ export class ReportController {
           provenanceSummary: {
             executionMode: snapshot.executionMode,
             scientificUse: snapshot.scientificUse,
-            generatedBy: 'NitroStack MCP generate_report',
+            generatedBy: 'ImmunoGraph MCP generate_report',
           },
           runQuality: snapshot.runQuality,
         };
@@ -94,12 +100,77 @@ export class ReportController {
 
   @ToolDecorator(toolOptions(exportCandidatesContract, CATEGORY))
   exportCandidates(input: unknown, context: ExecutionContext) {
-    return this.invokeCapability(exportCandidatesContract, input, context);
+    return executeTool({
+      toolName: exportCandidatesContract.name,
+      input,
+      inputSchema: exportCandidatesContract.inputSchema,
+      dataSchema: exportCandidatesContract.dataSchema,
+      context,
+      operation: async (validated) => {
+        if (validated.candidateSnapshot === undefined) {
+          return this.capabilities.invoke(exportCandidatesContract.name, validated) as Promise<
+            z.infer<typeof exportCandidatesContract.dataSchema>
+          >;
+        }
+        const rows = validated.candidateSnapshot.filter((candidate) =>
+          validated.categories.includes(candidate.category),
+        );
+        const contents =
+          validated.format === 'JSON'
+            ? JSON.stringify(
+                { schemaVersion: 'immunograph-candidates.v1', runId: validated.runId, candidates: rows },
+                null,
+                2,
+              )
+            : `candidateId,category,peptide,rawScore,normalizedScore,sourceStatus\n${rows
+                .map((row) =>
+                  [
+                    row.candidateId,
+                    row.category,
+                    row.peptide,
+                    row.rawScore,
+                    row.normalizedScore,
+                    row.sourceStatus,
+                  ]
+                    .map(csvCell)
+                    .join(','),
+                )
+                .join('\n')}\n`;
+        return inlineArtifact(
+          `${validated.runId}-candidates-${validated.format.toLowerCase()}`,
+          validated.format === 'JSON' ? 'application/json' : 'text/csv',
+          `mcp://exports/${validated.runId}/candidates.${validated.format.toLowerCase()}`,
+          contents,
+        );
+      },
+    });
   }
 
   @ToolDecorator(toolOptions(visualizeResultsContract, CATEGORY))
   visualizeResults(input: unknown, context: ExecutionContext) {
-    return this.invokeCapability(visualizeResultsContract, input, context);
+    return executeTool({
+      toolName: visualizeResultsContract.name,
+      input,
+      inputSchema: visualizeResultsContract.inputSchema,
+      dataSchema: visualizeResultsContract.dataSchema,
+      context,
+      operation: async (validated) => {
+        if (validated.visualizationSnapshot === undefined) {
+          return this.capabilities.invoke(visualizeResultsContract.name, validated) as Promise<
+            z.infer<typeof visualizeResultsContract.dataSchema>
+          >;
+        }
+        return {
+          visualizationType: validated.visualizationType,
+          viewModel: {
+            runId: validated.runId,
+            items: validated.visualizationSnapshot.items,
+            itemCount: validated.visualizationSnapshot.items.length,
+            provenance: validated.visualizationSnapshot.provenance ?? {},
+          },
+        };
+      },
+    });
   }
 
   @ToolDecorator(toolOptions(explainCandidateContract, CATEGORY))
@@ -149,7 +220,35 @@ export class ReportController {
 
   @ToolDecorator(toolOptions(exportTraceContract, CATEGORY))
   exportWorkflowTrace(input: unknown, context: ExecutionContext) {
-    return this.invokeCapability(exportTraceContract, input, context);
+    return executeTool({
+      toolName: exportTraceContract.name,
+      input,
+      inputSchema: exportTraceContract.inputSchema,
+      dataSchema: exportTraceContract.dataSchema,
+      context,
+      operation: async (validated) => {
+        if (validated.traceEvents === undefined) {
+          return this.capabilities.invoke(exportTraceContract.name, validated) as Promise<
+            z.infer<typeof exportTraceContract.dataSchema>
+          >;
+        }
+        const contents = JSON.stringify({
+          schemaVersion: 'immunograph-workflow-trace.v1',
+          runId: validated.runId,
+          redactionProfile: validated.redactionProfile,
+          events: validated.traceEvents,
+        }, null, 2);
+        return {
+          artifact: inlineArtifact(
+            `${validated.runId}-workflow-trace`,
+            'application/json',
+            `mcp://exports/${validated.runId}/workflow-trace.json`,
+            contents,
+          ),
+          eventCount: validated.traceEvents.length,
+        };
+      },
+    });
   }
 
   @ToolDecorator(toolOptions(describeAgenticWorkflowContract, CATEGORY))
@@ -172,7 +271,9 @@ export class ReportController {
       inputSchema: runAgenticWorkflowContract.inputSchema,
       dataSchema: runAgenticWorkflowContract.dataSchema,
       context,
-      operation: runLangGraphAgentWorkflow,
+      operation: (validated) => runLangGraphAgentWorkflow(validated, this.toolInvoker
+        ? (toolName, args) => this.toolInvoker!(toolName, args, context)
+        : undefined),
     });
   }
 
@@ -204,7 +305,7 @@ export class ReportController {
           evidenceKeys.length === 0
             ? 'I do not have stored evidence for this question, so I must abstain rather than infer scientific facts.'
             : (llm.text ??
-              `Grounded answer from stored ImmunoGraph evidence: ${evidenceKeys.join(', ')}. Scientific values must be interpreted only with their recorded provenance.`);
+              `Supplied evidence for "${validated.question}": ${evidenceKeys.map((key) => `${key}=${JSON.stringify(validated.evidenceSummary[key])}`).join('; ').slice(0, 6000)}. Interpret scientific values with their recorded provenance.`);
         return {
           answer,
           grounded,
@@ -315,10 +416,27 @@ function reportCsv(rows: Array<Record<string, unknown>>, disclaimer: string): st
     'sourceStatus',
     'scientificUse',
   ];
-  const quote = (value: unknown) => `"${String(value ?? '').replaceAll('"', '""')}"`;
-  return `# ${disclaimer}\n${columns.join(',')}\n${rows
-    .map((row) => columns.map((column) => quote(row[column])).join(','))
+  return `# ${disclaimer.replaceAll(/[\r\n]/g, ' ')}\n${columns.join(',')}\n${rows
+    .map((row) => columns.map((column) => csvCell(row[column])).join(','))
     .join('\n')}\n`;
+}
+
+function csvCell(value: unknown): string {
+  const raw = String(value ?? '');
+  const safe = typeof value === 'string' && /^[=+@\t\r]/.test(raw) ? `'${raw}` : raw;
+  return `"${safe.replaceAll('"', '""')}"`;
+}
+
+function inlineArtifact(artifactId: string, mediaType: string, reference: string, contents: string) {
+  const bytes = Buffer.from(contents, 'utf8');
+  return {
+    artifactId,
+    mediaType,
+    sha256: createHash('sha256').update(bytes).digest('hex'),
+    byteLength: bytes.byteLength,
+    reference,
+    contentBase64: bytes.toString('base64'),
+  };
 }
 
 function createMcpResearchPackageZip(input: {
@@ -346,7 +464,7 @@ function createMcpResearchPackageZip(input: {
       runId: input.runId,
       executionMode: 'MCP_AGENTIC_EXPORT',
       scientificUse: false,
-      generatedBy: 'One NitroStack MCP App',
+      generatedBy: 'One ImmunoGraph MCP server',
       ...snapshot?.run,
     }),
     jsonEntry('configuration.json', {
@@ -568,7 +686,7 @@ function createMcpResearchPackageZip(input: {
         schemaVersion: 'immunograph-report.v1',
         runId: input.runId,
         generatedAt,
-        generatedBy: 'NitroStack MCP export_research_package',
+        generatedBy: 'ImmunoGraph MCP export_research_package',
         limitations: [
           'This stateless MCP export preserves the required package structure.',
           'Persisted API exports include full run-specific database records when available.',
@@ -596,7 +714,7 @@ function createMcpResearchPackageZip(input: {
     requiredSections: input.requiredSections,
     includesCsvExports: true,
     includesAgentTrace: input.includeAgentTrace,
-    generatedBy: 'NitroStack MCP export_research_package',
+    generatedBy: 'ImmunoGraph MCP export_research_package',
     files: files.map((file) => ({
       path: file.path,
       sha256: checksums[file.path],
