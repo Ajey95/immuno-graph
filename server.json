@@ -10,11 +10,14 @@
   "version": "0.2.0",
   "packages": [
     {
-      "registryType": "npm",
-      "registryBaseUrl": "https://registry.npmjs.org",
-      "identifier": "immunograph-mcp",
-      "version": "0.2.0",
-      "transport": { "type": "stdio" }
+      "registryType": "oci",
+      "identifier": "ghcr.io/ajey95/immuno-graph:0.2.0",
+      "runtimeHint": "docker",
+      "transport": { "type": "stdio" },
+      "packageArguments": [
+        { "type": "positional", "value": "node" },
+        { "type": "positional", "value": "dist/index.js" }
+      ]
     }
   ]
 }

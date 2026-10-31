@@ -56,6 +56,8 @@ jobs:
             -e IMMUNOGRAPH_ALLOWED_ORIGINS=localhost,127.0.0.1 \
             ghcr.io/ajey95/immuno-graph:${{ inputs.version }}
           node scripts/smoke-container.mjs
+      - name: Smoke test OCI stdio entry point
+        run: node scripts/smoke-container-stdio.mjs
       - name: Smoke test through TLS ingress
         env:
           IMMUNOGRAPH_SMOKE_API_KEY: 0123456789abcdef0123456789abcdef
