@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-labelledby="title desc">
+  <title id="title">ImmunoGraph MCP</title>
+  <desc id="desc">One MCP server connects protein sequence inputs to evidence tools, molecular docking, three-dimensional viewers, and research exports with explicit provenance.</desc>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0a1022"/>
+      <stop offset="0.56" stop-color="#15173a"/>
+      <stop offset="1" stop-color="#0b2236"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ab91ff"/>
+      <stop offset="1" stop-color="#6ee7ed"/>
+    </linearGradient>
+    <pattern id="grid" width="28" height="28" patternUnits="userSpaceOnUse">
+      <circle cx="1" cy="1" r="1" fill="#8b9fd4" opacity="0.16"/>
+    </pattern>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="18"/>
+    </filter>
+  </defs>
+  <rect width="1200" height="360" rx="24" fill="url(#background)"/>
+  <rect width="1200" height="360" rx="24" fill="url(#grid)"/>
+  <circle cx="1065" cy="38" r="116" fill="#6261e8" opacity="0.14" filter="url(#glow)"/>
+  <circle cx="790" cy="319" r="122" fill="#42cbcf" opacity="0.12" filter="url(#glow)"/>
+
+  <rect x="54" y="49" width="224" height="31" rx="15.5" fill="#2e2a61" stroke="#7771cc" stroke-opacity="0.7"/>
+  <circle cx="72" cy="64.5" r="4.5" fill="#81e6d5"/>
+  <text x="86" y="69" fill="#d8dcff" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="700" letter-spacing="1.2">OPEN SOURCE · MIT</text>
+  <text x="54" y="164" fill="#ffffff" font-family="Arial, Helvetica, sans-serif" font-size="65" font-weight="700" letter-spacing="-2">ImmunoGraph</text>
+  <text x="56" y="208" fill="#a99eff" font-family="Arial, Helvetica, sans-serif" font-size="29" font-weight="700">MCP</text>
+  <rect x="56" y="227" width="426" height="3" rx="1.5" fill="url(#accent)"/>
+  <text x="56" y="266" fill="#d7e0f4" font-family="Arial, Helvetica, sans-serif" font-size="19">One server. 46 research tools.</text>
+  <text x="56" y="296" fill="#aab8d4" font-family="Arial, Helvetica, sans-serif" font-size="17">Live paths · explicit provenance · real 3D exports</text>
+
+  <path d="M797 92 C825 92 825 178 853 178" fill="none" stroke="#8c8dec" stroke-width="2.5" opacity="0.8"/>
+  <path d="M997 187 C1020 187 1020 265 1041 265" fill="none" stroke="#66d7da" stroke-width="2.5" opacity="0.8"/>
+  <circle cx="799" cy="92" r="4" fill="#b4a3ff"/>
+  <circle cx="853" cy="178" r="4" fill="#b4a3ff"/>
+  <circle cx="997" cy="187" r="4" fill="#74dee0"/>
+  <circle cx="1041" cy="265" r="4" fill="#74dee0"/>
+
+  <rect x="588" y="45" width="215" height="92" rx="16" fill="#22234d" stroke="#595da3"/>
+  <text x="610" y="75" fill="#a99eff" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="700" letter-spacing="1.1">01 / INPUT</text>
+  <text x="610" y="106" fill="#ffffff" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700">Protein sequence</text>
+  <path d="M750 74 c8 -12 18 12 26 0 m-26 15 c8 -12 18 12 26 0" fill="none" stroke="#a99eff" stroke-width="2" opacity="0.7"/>
+
+  <rect x="850" y="139" width="240" height="96" rx="16" fill="#18394c" stroke="#408b9a"/>
+  <text x="874" y="170" fill="#7ee6e3" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="700" letter-spacing="1.1">02 / ANALYZE</text>
+  <text x="874" y="200" fill="#ffffff" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="700">Evidence + structure</text>
+  <circle cx="1052" cy="177" r="6" fill="#7ee6e3" opacity="0.8"/>
+  <circle cx="1037" cy="194" r="4" fill="#7ee6e3" opacity="0.55"/>
+  <path d="M1052 177 L1037 194" stroke="#7ee6e3" stroke-width="2" opacity="0.65"/>
+
+  <rect x="651" y="246" width="390" height="74" rx="16" fill="#2b2855" stroke="#7467b8"/>
+  <text x="676" y="275" fill="#b7a7ff" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="700" letter-spacing="1.1">03 / EXPORT</text>
+  <text x="676" y="300" fill="#ffffff" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700">Docking poses · 3D viewer · ZIP</text>
+  <path d="M1045 265 L1075 265 L1075 231" fill="none" stroke="#6ee7ed" stroke-width="2.5" opacity="0.75"/>
+  <circle cx="1075" cy="231" r="4" fill="#6ee7ed"/>
+</svg>
