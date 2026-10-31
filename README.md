@@ -222,18 +222,17 @@ npm start
 
 For a local HTTP endpoint, run `npm run start:http` and connect to `http://127.0.0.1:3000/mcp`. `GET /health` is a public health probe. For a remote deployment, set `HOST=0.0.0.0`, a long `IMMUNOGRAPH_API_KEY`, exact `IMMUNOGRAPH_ALLOWED_HOSTS` and `IMMUNOGRAPH_ALLOWED_ORIGINS`, and terminate TLS at the ingress. The supplied [Dockerfile](Dockerfile) runs HTTP; it does not publish a managed endpoint. See [SECURITY.md](SECURITY.md) for deployment guidance.
 
-To try the container locally after setting a long random API key:
+To try the published container locally after setting a long random API key:
 
 ```bash
-docker build -t immunograph-mcp:local .
 docker run --rm -p 3000:3000 \
   -e IMMUNOGRAPH_API_KEY=replace-with-a-long-random-secret \
   -e IMMUNOGRAPH_ALLOWED_HOSTS=localhost,127.0.0.1 \
   -e IMMUNOGRAPH_ALLOWED_ORIGINS=localhost,127.0.0.1 \
-  immunograph-mcp:local
+  ghcr.io/ajey95/immuno-graph:0.2.0
 ```
 
-The package and [MCP Registry manifest](server.json) are prepared for publication but have **not** been published as part of this migration. Build and run from source until a release is made.
+The [v0.2.0 source release](https://github.com/Ajey95/immuno-graph/releases/tag/v0.2.0) and `ghcr.io/ajey95/immuno-graph:0.2.0` container image are public. The [MCP Registry manifest](server.json) validates against the official registry schema. npm and MCP Registry publication are pending npm account authentication; use the source or container release meanwhile.
 
 ## MCP usage
 
