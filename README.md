@@ -81,7 +81,7 @@ Register the installed command in an MCP host that supports stdio servers:
 }
 ```
 
-The server speaks MCP on stdio, so launch it through your host. If the host cannot find the globally installed command, configure its absolute path. The [GitHub release](https://github.com/Ajey95/immuno-graph/releases/tag/v0.2.1) also includes the source and a SHA-256 checksum for the tarball.
+The server speaks MCP on stdio, so launch it through your host. If the host cannot find the globally installed command, configure its absolute path. The [GitHub release](https://github.com/Ajey95/immuno-graph/releases/tag/v0.2.1) also includes the source and a SHA-256 checksum for the tarball. The downloaded public tarball matched that checksum.
 
 ### Run the public container
 
@@ -239,7 +239,7 @@ If a required provider or binary is unavailable, the tool returns an explicit fa
 
 ## Verification and scope
 
-The [CI workflow](https://github.com/Ajey95/immuno-graph/actions/workflows/ci.yml) checks Windows and Linux on Node.js 20 and 22. A standard MCP client has exercised all 46 documented examples; the semantic audit checks calculations, provenance, and artifact hashes. The [container release run](https://github.com/Ajey95/immuno-graph/actions/runs/41224817115) tested 46-tool discovery and a real call over Docker stdio, guarded HTTP, and a test TLS ingress. These checks establish software behavior and packaging, not the accuracy of every scientific method or continuous availability of third-party services.
+The [CI workflow](https://github.com/Ajey95/immuno-graph/actions/workflows/ci.yml) checks Windows and Linux on Node.js 20 and 22. A standard MCP client has exercised all 46 documented examples; the semantic audit checks calculations, provenance, and artifact hashes. The [v0.2.1 container release run](https://github.com/Ajey95/immuno-graph/actions/runs/41230848366) tested 46-tool discovery and a real call over Docker stdio, guarded HTTP, and a test TLS ingress. The protocol audit also checks that every tool advertises parameter descriptions and a structured result schema. These checks establish software behavior and packaging, not the accuracy of every scientific method or continuous availability of third-party services.
 
 The motivation is familiar in epitope research: studies such as [Grifoni et al. (2020)](https://doi.org/10.1016/j.chom.2020.03.002) and [Ferreira et al. (2021)](https://pmc.ncbi.nlm.nih.gov/articles/PMC8641484/) combine sequence analysis, prediction, conservation, and other evidence across tools. ImmunoGraph makes computational handoffs easier to inspect; independent review and experimental validation remain necessary.
 
