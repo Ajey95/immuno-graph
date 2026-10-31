@@ -88,15 +88,13 @@ npm start
 
 ```mermaid
 flowchart LR
-    A["Protein FASTA<br/>PDB / SMILES / evidence"] --> H["MCP host"]
-    H --> S["ImmunoGraph<br/>one MCP server"]
-    S --> D["Local calculations<br/>and constraints"]
-    S --> L["Optional live providers<br/>and scientific binaries"]
-    S --> F["Exact fixtures<br/>and synthetic demos"]
-    D --> R["Structured result<br/>with provenance"]
+    A["FASTA · PDB · SMILES"] --> H["MCP host"]
+    H --> S["ImmunoGraph<br/>46 typed tools"]
+    S --> D["Local calculations<br/>and exact fixtures"]
+    S --> L["Optional live<br/>connectors"]
+    D --> R["Results + provenance"]
     L --> R
-    F --> R
-    R --> O["Reports · coordinates<br/>3D HTML · research ZIP"]
+    R --> O["Reports · 3D files · ZIP"]
 ```
 
 The host chooses which tools to call. ImmunoGraph validates typed inputs, executes a handler, and returns structured success or failure data with run metadata and source labels. The server does not silently run a full study or treat fixture values as live evidence. See [architecture](docs/ARCHITECTURE.md) for transport and module details.
@@ -105,13 +103,12 @@ The host chooses which tools to call. ImmunoGraph validates typed inputs, execut
 
 ```mermaid
 flowchart LR
-    FASTA["Protein sequence"] --> V["Validate + generate<br/>peptide windows"]
-    V --> E["Gather MHC / B-cell<br/>and HLA evidence"]
-    E --> C["Normalize + apply<br/>constraints"]
-    C --> R["Rank candidates"]
-    R --> X["Export evidence<br/>and decisions"]
-    E -.->|Optional structure review| S["Structure + chemistry"]
-    S -.->|Optional docking support| X
+    FASTA["Protein FASTA"] --> V["Peptide windows"]
+    V --> E["Immune evidence"]
+    E --> R["Constraints + ranking"]
+    R --> X["Reviewable exports"]
+    E -.->|Optional| S["Structure + docking"]
+    S -.-> X
 ```
 
 These are **separate MCP calls**. Rankings and reports depend on the evidence the client supplies. With live prediction disabled, an arbitrary new protein has no automatic scientific binding result.
