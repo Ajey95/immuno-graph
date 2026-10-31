@@ -6,7 +6,7 @@ Release status for v0.2.0. Checkmarks reflect verified outcomes, not merely prep
 - [x] Review every public tool contract and the scientific provenance language against the 46-tool semantic audit and [tool reality matrix](docs/TOOL_REALITY_MATRIX.md).
 - [x] Run CI on Windows/Linux with Node 20 and 22 and resolve every failure.
 - [x] Build and run the published Docker image; verify health, bearer auth, 46-tool discovery, and a live MCP call in [the container smoke run](https://github.com/Ajey95/immuno-graph/actions/runs/41223646880).
-- [ ] Verify an authenticated HTTP call through a TLS ingress when deploying a remote endpoint.
+- [x] Verify authenticated MCP calls through a test TLS ingress in [the container release run](https://github.com/Ajey95/immuno-graph/actions/runs/41223884868). A managed remote deployment is separate.
 - [x] Confirm `npm pack --dry-run` contains the compiled server, `data/`, license, and docs.
 - [x] Install the generated npm tarball in a clean directory and confirm a standard MCP client discovers 46 tools and calls `validate_sequence` successfully.
 - [x] Confirm `package.json` `mcpName` matches `server.json` and validate the registry manifest against the official schema.

@@ -1,6 +1,6 @@
 # ImmunoGraph MCP workspace context
 
-Updated 2026-10-31. [PR #13](https://github.com/Ajey95/immuno-graph/pull/13) was merged into `main`. The [v0.2.0 source release](https://github.com/Ajey95/immuno-graph/releases/tag/v0.2.0) and `ghcr.io/ajey95/immuno-graph:0.2.0` container are public. The published container passed [a live MCP smoke run](https://github.com/Ajey95/immuno-graph/actions/runs/41223646880). This repository runs one standard MCP server with 46 registered tools over stdio or guarded Streamable HTTP. The tool list is not a count of independent scientific providers.
+Updated 2026-10-31. [PR #13](https://github.com/Ajey95/immuno-graph/pull/13) was merged into `main`. The [v0.2.0 source release](https://github.com/Ajey95/immuno-graph/releases/tag/v0.2.0) and `ghcr.io/ajey95/immuno-graph:0.2.0` container are public. The published container passed [live MCP and TLS ingress smoke tests](https://github.com/Ajey95/immuno-graph/actions/runs/41223884868). This repository runs one standard MCP server with 46 registered tools over stdio or guarded Streamable HTTP. The tool list is not a count of independent scientific providers.
 
 ## Working live paths
 
@@ -16,4 +16,4 @@ Run `npm ci`, `npm run check`, then set the required live connector variables in
 
 ## Remaining limits
 
-GraphBepi remains exact-fixture-only: its upstream runtime and model are not installed or validated here. BepiPred-3.0 is the supported live B-cell alternative; Parker is a hydrophilicity proxy. npm and MCP Registry publication await npm authentication. No remote production deployment has been claimed; TLS ingress has not been verified.
+GraphBepi remains exact-fixture-only: its upstream runtime and model are not installed or validated here. BepiPred-3.0 is the supported live B-cell alternative; Parker is a hydrophilicity proxy. npm and MCP Registry publication await npm authentication. No remote production deployment has been claimed; the TLS test uses a temporary CI ingress.
