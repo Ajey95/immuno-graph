@@ -4,8 +4,6 @@
   <img src="docs/assets/immunograph-hero-gpt.png" alt="Illustrative ImmunoGraph banner with a protein ribbon, molecular motif, and the words ImmunoGraph: MCP for inspectable research." width="100%">
 </p>
 
-<p align="center"><sub>Banner artwork is illustrative. <a href="#real-3d-outcomes">See coordinate-based 3D outcomes</a> below.</sub></p>
-
 <p align="center">
   <a href="https://github.com/Ajey95/immuno-graph/actions/workflows/ci.yml"><img alt="CI status" src="https://github.com/Ajey95/immuno-graph/actions/workflows/ci.yml/badge.svg?branch=main"></a>
   <a href="https://github.com/Ajey95/immuno-graph/releases/tag/v0.2.0"><img alt="Release v0.2.0" src="https://img.shields.io/badge/release-v0.2.0-7357d3"></a>
