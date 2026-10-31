@@ -56,6 +56,19 @@ jobs:
             -e IMMUNOGRAPH_ALLOWED_ORIGINS=localhost,127.0.0.1 \
             ghcr.io/ajey95/immuno-graph:${{ inputs.version }}
           node scripts/smoke-container.mjs
+      - name: Smoke test through TLS ingress
+        env:
+          IMMUNOGRAPH_SMOKE_API_KEY: 0123456789abcdef0123456789abcdef
+        run: |
+          openssl req -x509 -newkey rsa:2048 -nodes \
+            -keyout "$RUNNER_TEMP/ingress.key" -out "$RUNNER_TEMP/ingress.crt" \
+            -days 1 -subj /CN=localhost -addext subjectAltName=DNS:localhost,IP:127.0.0.1
+          IMMUNOGRAPH_SMOKE_TLS_CERT="$RUNNER_TEMP/ingress.crt" \
+            IMMUNOGRAPH_SMOKE_TLS_KEY="$RUNNER_TEMP/ingress.key" \
+            node scripts/smoke-tls-ingress.mjs &
+          IMMUNOGRAPH_SMOKE_URL=https://127.0.0.1:3443/mcp \
+            NODE_EXTRA_CA_CERTS="$RUNNER_TEMP/ingress.crt" \
+            node scripts/smoke-container.mjs
       - name: Container logs
         if: failure()
         run: docker logs immunograph-smoke || true
