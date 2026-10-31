@@ -1,6 +1,6 @@
 {
   "name": "immunograph-mcp",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "type": "module",
   "description": "Standard MCP server for provenance-aware computational epitope research tools",
   "mcpName": "io.github.Ajey95/immunograph",

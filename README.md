@@ -6,10 +6,10 @@
 
 <p align="center">
   <a href="https://github.com/Ajey95/immuno-graph/actions/workflows/ci.yml"><img alt="CI status" src="https://github.com/Ajey95/immuno-graph/actions/workflows/ci.yml/badge.svg?branch=main"></a>
-  <a href="https://github.com/Ajey95/immuno-graph/releases/tag/v0.2.0"><img alt="Release v0.2.0" src="https://img.shields.io/badge/release-v0.2.0-7357d3"></a>
+  <a href="https://github.com/Ajey95/immuno-graph/releases/tag/v0.2.1"><img alt="Release v0.2.1" src="https://img.shields.io/badge/release-v0.2.1-7357d3"></a>
   <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-28a99a"></a>
   <a href="docs/TOOL_CATALOG.md"><img alt="46 MCP tools" src="https://img.shields.io/badge/MCP_tools-46-316b9a"></a>
-  <a href="https://registry.modelcontextprotocol.io/v0/servers/io.github.Ajey95%2Fimmunograph/versions/0.2.0"><img alt="Listed in the official MCP Registry" src="https://img.shields.io/badge/MCP_Registry-listed-4054a8"></a>
+  <a href="https://registry.modelcontextprotocol.io/v0/servers/io.github.Ajey95%2Fimmunograph/versions/0.2.1"><img alt="Listed in the official MCP Registry" src="https://img.shields.io/badge/MCP_Registry-listed-4054a8"></a>
 </p>
 
 **A standard Model Context Protocol server for computational epitope research.** Call 46 typed tools for sequence processing, immune evidence, structure and chemistry analysis, docking, and reviewable exports. Results carry provenance so a live provider result stays distinct from a fixture or synthetic demonstration.
@@ -66,7 +66,7 @@ This flow is **modular**: a user can call one tool without running every stage. 
 Node.js 20 or newer is required. The versioned tarball is hosted on GitHub and installs with npm; the `immunograph-mcp` name is **not yet published on the npm registry**.
 
 ```bash
-npm install --global https://github.com/Ajey95/immuno-graph/releases/download/v0.2.0/immunograph-mcp-0.2.0.tgz
+npm install --global https://github.com/Ajey95/immuno-graph/releases/download/v0.2.1/immunograph-mcp-0.2.1.tgz
 ```
 
 Register the installed command in an MCP host that supports stdio servers:
@@ -81,11 +81,11 @@ Register the installed command in an MCP host that supports stdio servers:
 }
 ```
 
-The server speaks MCP on stdio, so launch it through your host. If the host cannot find the globally installed command, configure its absolute path. The [GitHub release](https://github.com/Ajey95/immuno-graph/releases/tag/v0.2.0) also includes the source and the tarball's SHA-256 checksum. The public tarball was downloaded, hash-checked, installed, and called through a standard MCP client.
+The server speaks MCP on stdio, so launch it through your host. If the host cannot find the globally installed command, configure its absolute path. The [GitHub release](https://github.com/Ajey95/immuno-graph/releases/tag/v0.2.1) also includes the source and a SHA-256 checksum for the tarball.
 
 ### Run the public container
 
-The [official MCP Registry entry](https://registry.modelcontextprotocol.io/v0/servers/io.github.Ajey95%2Fimmunograph/versions/0.2.0) points to the public OCI image. For a local stdio host, use:
+The [official MCP Registry entry](https://registry.modelcontextprotocol.io/v0/servers/io.github.Ajey95%2Fimmunograph/versions/0.2.1) points to the public OCI image. For a local stdio host, use:
 
 ```json
 {
@@ -94,7 +94,7 @@ The [official MCP Registry entry](https://registry.modelcontextprotocol.io/v0/se
       "command": "docker",
       "args": [
         "run", "--rm", "-i",
-        "ghcr.io/ajey95/immuno-graph:0.2.0",
+        "ghcr.io/ajey95/immuno-graph:0.2.1",
         "node", "dist/index.js"
       ]
     }

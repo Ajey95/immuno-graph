@@ -7,11 +7,11 @@
     "url": "https://github.com/Ajey95/immuno-graph",
     "source": "github"
   },
-  "version": "0.2.0",
+  "version": "0.2.1",
   "packages": [
     {
       "registryType": "oci",
-      "identifier": "ghcr.io/ajey95/immuno-graph:0.2.0",
+      "identifier": "ghcr.io/ajey95/immuno-graph:0.2.1",
       "runtimeHint": "docker",
       "transport": { "type": "stdio" },
       "packageArguments": [

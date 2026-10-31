@@ -28,7 +28,7 @@ function executionContext(context: ServerContext): ExecutionContext {
 }
 
 export function createServer(): McpServer {
-  const server = new McpServer({ name: 'immunograph-mcp', version: '0.2.0' });
+  const server = new McpServer({ name: 'immunograph-mcp', version: '0.2.1' });
   const names = new Set<string>();
   const groups = createToolGroups();
   const handlers = new Map<string, (input: unknown, context: ExecutionContext) => Promise<unknown>>();

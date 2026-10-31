@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.1 - 2026-11-01
+
+- Document the purpose, usage boundaries, source requirements, and results of all 46 tools in MCP discovery metadata.
+- Describe every top-level input parameter and advertise the shared structured success/error result envelope.
+- Gate tool metadata in the standard-client audit, including 46-tool discovery and complete parameter documentation.
+
 ## 0.2.0 - 2026-10-31
 
 - Replace the NitroStack runtime with the official MCP TypeScript SDK.
