@@ -21,7 +21,11 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
       - run: npm ci
+      - run: python tests/test_extract_plip.py
       - run: npm test
       - run: npm run build
       - run: npm run test:all-tools

@@ -38,6 +38,8 @@ Within `toolCalls`, a later argument can consume a prior result with `{ "$result
 
 Each exported artifact contains `contentBase64`, `sha256`, and `byteLength`. Decode the bytes and verify SHA-256 before saving. An `mcp://` reference by itself is not a downloadable file; the inline bytes are the file. `run_docking` includes a ZIP with `receptor.pdbqt`, `ligand.pdbqt`, `poses.pdbqt`, receptor and top-pose PDB files, `complex.pdb`, `vina.log`, `box.json`, and `viewer.html`. The complex PDB is also an inline artifact for PLIP. The 3Dmol and Mol* viewers load versioned libraries from CDNs; their coordinates are embedded or exported in files.
 
+The structured PLIP contact list normalizes hydrophobic contacts, hydrogen bonds, salt bridges, and pi stacking. The original XML artifact retains PLIP's full interaction report, including other contact classes that are not yet normalized into the MCP list. For the live 1IEP example, the current adapter returns 10 structured contacts (6 hydrophobic, 3 hydrogen bonds, and 1 pi stack).
+
 ## Local setup
 
 Install Node.js 20+ and run `npm ci && npm run build`. Install a Python environment with `python -m venv .venv-live` and `.venv-live\Scripts\python -m pip install -r scripts/live/requirements.txt` on Windows. Install the native AutoDock Vina executable separately and set its absolute path as `VINA_COMMAND`. On Linux/macOS, use that environment's `bin/python` path. The Vina executable and scientific Python packages are optional dependencies and are not bundled in the npm package.

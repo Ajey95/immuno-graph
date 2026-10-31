@@ -10,5 +10,6 @@
 - Verify live RCSB, PubChem, RDKit, Meeko, IEDB MHC-I/MHC-II, and AutoDock Vina paths through a standard MCP client.
 - Run PLIP, FreeSASA, fpocket, direct structure mapping, and Mol* with supplied coordinate data when their runtimes are configured; fail explicitly when a required live dependency is missing.
 - Verify all 46 documented examples through an LLM MCP host and an independent semantic audit, including artifact hashes and fixture provenance.
+- Include PLIP pi-stacking contacts in the structured interaction result; previously the raw XML contained them but the normalized list omitted them.
 
 The public package and container have not been published from this branch.

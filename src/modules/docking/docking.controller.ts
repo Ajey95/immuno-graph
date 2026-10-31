@@ -163,7 +163,7 @@ const interactionsData = z
       z
         .object({
           poseId: identifierSchema,
-          interactionType: z.enum(['HYDROGEN_BOND', 'HYDROPHOBIC', 'IONIC', 'FIXTURE_CONTACT']),
+          interactionType: z.enum(['HYDROGEN_BOND', 'HYDROPHOBIC', 'IONIC', 'PI_STACKING', 'FIXTURE_CONTACT']),
           residueRef: identifierSchema,
           distanceAngstrom: z.number().finite().positive(),
         })
@@ -574,7 +574,7 @@ export class DockingController {
             const script = fileURLToPath(new URL('../../../scripts/live/extract_plip.py', import.meta.url));
             await this.runtime.runCommand(environment.SCIENTIFIC_PYTHON_COMMAND, [script, inputPath, outputPath]);
             const extracted = JSON.parse(await readFile(outputPath, 'utf8')) as {
-              interactions: Array<{ interactionType: 'HYDROGEN_BOND' | 'HYDROPHOBIC' | 'IONIC'; residueRef: string; distanceAngstrom: number }>;
+              interactions: Array<{ interactionType: 'HYDROGEN_BOND' | 'HYDROPHOBIC' | 'IONIC' | 'PI_STACKING'; residueRef: string; distanceAngstrom: number }>;
               xml: string;
             };
             if (!Array.isArray(extracted.interactions) || typeof extracted.xml !== 'string') {

@@ -7,6 +7,7 @@ Updated 2026-10-29. Active development branch: `feat/standard-mcp-runtime`; draf
 - IEDB MHC-I/II, IEDB BepiPred-3.0, and IEDB population coverage use remote provider APIs when their opt-in flags are enabled and a live-permitting fallback policy is selected.
 - RCSB and AlphaFold DB return coordinate artifacts. `calculate_structure_confidence` extracts per-residue pLDDT only from AlphaFold DB PDB bytes; it rejects experimental PDB B-factors.
 - PubChem, RDKit, Meeko, Vina, FreeSASA, fpocket, and PLIP have live computation paths. Vina exports actual poses, PDB/PDBQT coordinates, a 3D viewer, and a ZIP. Mol* exports a viewer with actual coordinate data.
+- The 1IEP/imatinib Vina example produced three coordinate poses. Its viewer's protein and ligand models matched the ZIP's PDB files byte-for-byte; the top pose was 0.900 Å from the supplied prepared ligand over 37 matching heavy atoms. A PLIP parser fix now preserves the example's pi-stack contact, yielding 10 structured contacts matching the raw XML count. These are computational checks, not experimental binding validation.
 - Ranking, constraints, calibration, and reporting tools calculate from caller-supplied evidence. Their scientific validity depends on that evidence. Two tools are deliberately named synthetic demonstrations.
 
 ## Reproduce and inspect

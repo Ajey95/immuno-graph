@@ -6,6 +6,8 @@ logs/
 .tmp-*
 *.tgz
 *.log
+__pycache__/
+*.pyc
 
 .agents/
 .antigravity/
