@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "immunograph-docking-summary.v1",
+  "runId": "science-live-2026-07-25T20-50-58-011Z",
+  "sourceStatus": "LIVE",
+  "scientificUse": true,
+  "poseCount": 9,
+  "files": [
+    "docking/receptor.pdbqt",
+    "docking/ligand.sdf",
+    "docking/ligand.pdbqt",
+    "docking/docking-output.pdbqt",
+    "docking/docking-poses.json",
+    "docking/docking-complex.pdb",
+    "docking/plip.log",
+    "docking/docking-view.png"
+  ]
+}

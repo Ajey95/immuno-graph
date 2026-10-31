@@ -14,10 +14,27 @@
 
 **A standard Model Context Protocol server for computational epitope research.** Call 46 typed tools for sequence processing, immune evidence, structure and chemistry analysis, docking, and reviewable exports. Results carry provenance so a live provider result stays distinct from a fixture or synthetic demonstration.
 
-[Get started](#get-started) · [How it works](#how-it-works) · [Docking and 3D files](#docking-and-3d-files) · [All 46 tools](docs/TOOL_CATALOG.md) · [Live setup](#enable-live-connectors) · [Contribute](CONTRIBUTING.md)
+[Problem](#the-problem) · [Who it is for](#who-it-is-for) · [User flow](#user-flow) · [Get started](#get-started) · [3D outcomes](#real-3d-outcomes) · [All 46 tools](docs/TOOL_CATALOG.md) · [Contribute](CONTRIBUTING.md)
 
 > [!IMPORTANT]
 > ImmunoGraph supports **computational research**, not clinical or experimental validation. A predicted epitope, docking pose, score, or exported 3D model does not establish binding, vaccine efficacy, or safety. Fixture and synthetic results are demonstrations and are labelled as such.
+
+## The problem
+
+An epitope research workflow crosses different kinds of software: sequence processing, immune predictors, HLA coverage, structure databases, molecular preparation, docking, interaction analysis, and reporting. Each step has its own input format, runtime, and scientific assumptions. When an LLM or research application chains them together, it must also keep track of *which inputs and methods produced each result*. A plausible looking score or 3D view is easy to misread if its source is missing.
+
+ImmunoGraph gives an MCP host one typed interface for these steps. The host can discover and call individual tools, pass outputs between them, and inspect explicit source labels and exported bytes. This reduces custom integration code for a **reviewable computational workflow**; it does not replace scientific judgment or validate a prediction by itself.
+
+## Who it is for
+
+| Audience | Typical use |
+| --- | --- |
+| Computational immunology and vaccine research teams | Assemble and review sequence, MHC, B-cell, coverage, and structural evidence for candidate exploration |
+| Structural bioinformatics and medicinal chemistry researchers | Prepare coordinates, run configured docking tools, inspect poses and contacts, and export the actual files |
+| Developers building LLM research assistants | Expose typed scientific operations through standard MCP instead of writing a separate adapter for every step |
+| Educators and reproducibility reviewers | Demonstrate a workflow with clearly marked fixtures, then inspect method boundaries, provenance, and artifacts |
+
+The outputs are for research and education. Clinical decisions, efficacy claims, and experimental validation require independent methods and evidence.
 
 ## What you can do
 
@@ -26,6 +43,21 @@
 | Validate FASTA, generate peptide windows, retrieve PDB structures and PubChem compounds | Call enabled IEDB predictors; calculate consensus and coverage; run RDKit, FreeSASA, fpocket, Meeko, Vina, and PLIP where installed | Rank caller-supplied evidence; export CSV, PDB, SDF, PDBQT, docking poses, Mol* or docking viewers, and a checksummed research ZIP |
 
 This is **one server with 46 tools**, not 46 independent live data providers. Each tool is callable on its own. A client passes results between calls when building a workflow.
+
+## User flow
+
+The researcher works in an MCP-enabled chat or application. The **client chooses the calls and carries evidence forward**; ImmunoGraph executes each requested operation and returns a typed result.
+
+| Step | Researcher or client action | ImmunoGraph response |
+| --- | --- | --- |
+| 1. Connect | Add the stdio server to an MCP host; enable only the live connectors needed for the study | The host discovers 46 tools and their input schemas |
+| 2. Define inputs | Provide a FASTA sequence and study criteria | `validate_sequence` checks and hashes the sequence; `generate_candidate_peptides` enumerates real peptide windows |
+| 3. Gather evidence | Request available MHC-I/II, B-cell, population, or other calculations | Each call returns scores or a structured failure with source status; live predictors require their configured service |
+| 4. Prioritize | Pass selected evidence, thresholds, and coverage data into the scoring and constraint tools | Normalized scores, consensus, exclusions, and ranked candidates depend on the supplied evidence |
+| 5. Inspect structure | Optionally fetch PDB/compound data and run accessibility, pocket, ligand, docking, or contact tools | Coordinate-based outputs, pose files, 3D viewer HTML, and analysis data where the scientific runtime is installed |
+| 6. Review and export | Inspect source labels and parameters, then request reports, CSV, trace, or research ZIP | File bytes with lengths and SHA-256 hashes for independent saving and verification |
+
+This flow is **modular**: a user can call one tool without running every stage. `run_agentic_workflow` executes caller-supplied, approved tool calls; without those calls it returns a plan rather than silently launching a full study. See [architecture](docs/ARCHITECTURE.md) and the [tool reality matrix](docs/TOOL_REALITY_MATRIX.md) for exact execution boundaries.
 
 ## Get started
 
@@ -99,6 +131,18 @@ flowchart LR
 
 The host chooses which tools to call. ImmunoGraph validates typed inputs, executes a handler, and returns structured success or failure data with run metadata and source labels. The server does not silently run a full study or treat fixture values as live evidence. See [architecture](docs/ARCHITECTURE.md) for transport and module details.
 
+### Technical design
+
+| Concern | Implementation | Why it matters |
+| --- | --- | --- |
+| Client interoperability | Official MCP SDK; stdio for local hosts and guarded Streamable HTTP for deployments | One discoverable tool contract works across MCP-capable clients |
+| Input and result contracts | Zod schemas, typed handlers, structured MCP results, explicit errors | Clients can validate arguments and handle failures programmatically |
+| Scientific provenance | Source status, method/run metadata, and versioned exact-match fixtures | Reviewers can distinguish configured live work from offline demonstrations |
+| Export integrity | Inline artifact bytes, byte lengths, and SHA-256 digests | A host can save actual PDB/PDBQT/CSV/ZIP files and verify them |
+| Operational boundaries | Optional connectors and local scientific binaries are configured separately | Missing providers fail explicitly or use only the requested, labelled fallback |
+
+The registry entry points to the published OCI image. Optional scientific binaries, model downloads, and third-party service availability remain separate runtime requirements.
+
 ### A research workflow
 
 ```mermaid
@@ -129,7 +173,17 @@ flowchart LR
     POSE --> ZIP["Research ZIP"]
 ```
 
-The [live docking guide](docs/LIVE_WORKFLOWS.md) documents inputs, runtime requirements, example files, and verification of the exported pose chain. A 3D viewer visualizes returned coordinate data; it is not evidence of experimental binding. [Download the example docking research package](research-package-actual-docking-full.zip) to inspect its included files.
+### Real 3D outcomes
+
+**1IEP + imatinib: exported top Vina pose.** This figure is rendered from a [saved complex PDB](docs/examples/1iep-imatinib-vina-complex.pdb) produced by a `LIVE_ONLY` MCP docking call. Panel A traces the protein Cα coordinates and shows the ligand; panel B shows the ligand and protein atoms within 5 Å. The [render script](scripts/render-docking-example.py) reproduces the image from those coordinates. This is a docking capability example, not an epitope candidate; the pose score is a computational estimate, not measured affinity.
+
+![Two coordinate-based 3D views of the 1IEP protein and a docked imatinib pose: a protein C-alpha trace and a close view of ligand atoms near protein atoms.](docs/assets/1iep-imatinib-docked-pose.png)
+
+**1UYD + PubChem CID 2244: three computed poses.** This figure comes from the [live docking research ZIP](research-package-actual-docking-full.zip), which includes the receptor, ligand, Vina poses, complex, and image. Its [run provenance](docs/examples/docking-provenance.json) and [summary](docs/examples/docking-summary.json) identify the sources and nine generated poses; the image shows three of them. The callouts show distances calculated from the coordinates; dashed polar contacts are inferred geometry, not experimentally established bonds.
+
+<p align="center"><img src="docs/assets/1uyd-docking-poses.png" alt="Three real 3D Vina docking pose renders for the 1UYD receptor and PubChem CID 2244 ligand, each with a protein ribbon, ligand, nearby residues, and coordinate-derived distance callouts." width="650"></p>
+
+The [live docking guide](docs/LIVE_WORKFLOWS.md) documents inputs, runtime requirements, example files, and verification of the exported pose chain. An interactive 3D viewer visualizes returned coordinate data; neither image establishes experimental binding.
 
 ## Provenance you can inspect
 

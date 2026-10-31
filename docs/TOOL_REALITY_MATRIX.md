@@ -51,7 +51,7 @@ Updated 2026-10-29. `npm run test:all-tools` calls all 46 examples through a sta
 | `chat_with_research_agent` | Answer from supplied evidence, optional configured LLM | Deterministic evidence response verified; no independent retrieval |
 | `export_research_package` | Build ZIP from supplied package snapshot | MCP artifact bytes and hash verified |
 
-## What still breaks first
+## Known scientific and integration limits
 
 1. GraphBepi requires an independently installed model/runtime and a validated output adapter. Its public repository documents Linux, historical Python/Torch versions, pretrained model downloads, and PDB/FASTA prediction commands; it is not bundled here. `predict_bcell` now has live IEDB BepiPred-3.0 inference, while Parker remains a hydrophilicity proxy.
 2. IEDB next-generation population coverage has a live MCP call with the World AFND dataset. The optional standalone and custom-service paths have not been live verified. Do not relabel the exact fixture or synthetic calculator as population evidence.

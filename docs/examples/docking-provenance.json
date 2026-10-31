@@ -1,0 +1,43 @@
+{
+  "schemaVersion": "immunograph-live-docking-provenance.v1",
+  "runId": "science-live-2026-07-25T20-50-58-011Z",
+  "sourceStatus": "LIVE",
+  "scientificUse": true,
+  "validationStatus": "COMPUTATIONAL_TOOL_OUTPUT",
+  "connectors": [
+    {
+      "connectorId": "rcsb-pdb",
+      "status": "LIVE",
+      "sourceUri": "https://files.rcsb.org/download/1UYD.pdb"
+    },
+    {
+      "connectorId": "pubchem",
+      "status": "LIVE",
+      "sourceUri": "https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/2244/property/Title,IsomericSMILES,CanonicalSMILES,MolecularFormula,MolecularWeight/JSON"
+    },
+    {
+      "connectorId": "rdkit",
+      "status": "LIVE"
+    },
+    {
+      "connectorId": "open-babel",
+      "status": "LIVE"
+    },
+    {
+      "connectorId": "freesasa",
+      "status": "LIVE"
+    },
+    {
+      "connectorId": "fpocket",
+      "status": "LIVE"
+    },
+    {
+      "connectorId": "autodock-vina",
+      "status": "LIVE"
+    },
+    {
+      "connectorId": "plip",
+      "status": "LIVE"
+    }
+  ]
+}

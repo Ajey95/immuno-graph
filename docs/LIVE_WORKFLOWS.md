@@ -4,7 +4,7 @@ The 46 registered tools are not 46 live scientific integrations. `npm run test:a
 
 `npm run test:semantics` also calls all 46 documented examples through a standard MCP client. It checks each tool's intended output fields and behavior, verifies inline artifact lengths and SHA-256 hashes, and inspects the research ZIP's entries. These examples cover contract behavior; many deliberately use fixtures. The live verifier scripts below provide separate evidence for real provider and computation paths.
 
-A separate Codex LLM MCP client also called all 46 documented examples once each: 46 unique calls and 46 successful `ok` envelopes. Its first attempt exposed missing read-only annotations on five constraint calculations; those annotations are now present and asserted by `test:semantics`. The LLM example run used fixture and synthetic inputs where documented, so it does not replace live provider verification.
+A separate LLM MCP client also called all 46 documented examples once each: 46 unique calls and 46 successful `ok` envelopes. The audit exposed missing read-only annotations on five constraint calculations; those annotations are now present and asserted by `test:semantics`. The LLM example run used fixture and synthetic inputs where documented, so it does not replace live provider verification.
 
 ## Verified live path
 
@@ -46,7 +46,7 @@ Install Node.js 20+ and run `npm ci && npm run build`. Install a Python environm
 
 Set `RCSB_PDB_ENABLED=true`, `PUBCHEM_ENABLED=true`, `IEDB_LIVE_ENABLED=true`, `IEDB_BCELL_ENABLED=true`, `RDKIT_ENABLED=true`, `MEEKO_ENABLED=true`, `VINA_ENABLED=true`, `RDKIT_PYTHON_COMMAND`, `MEEKO_PYTHON_COMMAND`, `VINA_COMMAND`, and `DOCKING_COMMAND_TIMEOUT_MS=600000` in the server environment. The connector flags default to false. No fixture fallback is used in the live verification scripts.
 
-MCP hosts may sanitize the shell environment before starting a server. Put the required flags and command paths in that host's per-server environment configuration. For example, a separate Codex CLI client reached the server but initially received `IEDB_BCELL_NOT_CONFIGURED` until `mcp_servers.immunograph.env.IEDB_BCELL_ENABLED="true"` was set for that client; the same `LIVE_ONLY` BepiPred request then returned live residue scores. Set `tool_timeout_sec` high enough for remote jobs or docking.
+MCP hosts may sanitize the shell environment before starting a server. Put the required flags and command paths in that host's per-server environment configuration. In a BepiPred test, the client initially received `IEDB_BCELL_NOT_CONFIGURED`; after `IEDB_BCELL_ENABLED=true` was passed to its MCP server process, the same `LIVE_ONLY` request returned live residue scores. Set the host's tool timeout high enough for remote jobs or docking.
 
 For analysis, set `PLIP_ENABLED=true`, `FREESASA_ENABLED=true`, `FPOCKET_ENABLED=true`, `MOLSTAR_ENABLED=true`, and `SCIENTIFIC_PYTHON_COMMAND` to the interpreter with the pinned Python dependencies. fpocket needs a native executable. On Windows, fpocket can run in WSL with `FPOCKET_WSL_DISTRO` and a Linux `FPOCKET_COMMAND` path. Vina can likewise run in WSL with `VINA_WSL_DISTRO` and `VINA_COMMAND=vina`. See [`.env.example`](../.env.example).
 
